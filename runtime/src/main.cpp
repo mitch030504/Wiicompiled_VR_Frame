@@ -49,6 +49,14 @@
 #include <ucontext.h>
 #endif
 #include <unistd.h>
+#if defined(__GLIBC__)
+// The host side of a native crash on desktop Linux: the faulting thread, its pc and lr, and a
+// backtrace, each as module + offset for addr2line against the unstripped executable.
+#include <dlfcn.h>
+#include <execinfo.h>
+#include <pthread.h>
+#include <ucontext.h>
+#endif
 #endif
 
 #include "abi_bridge.h"
@@ -766,6 +774,23 @@ void SetRuntimeExitCodeImpl(int code) {
 
 namespace {
 
+#if defined(__GLIBC__)
+// One host code address as module + offset (what `addr2line -f -C -e <module> <offset>` takes),
+// with the nearest exported symbol when there is one.
+void LogHostAddress(const char* label, int index, const void* address) {
+    Dl_info info{};
+    if (address != nullptr && dladdr(address, &info) != 0 && info.dli_fname != nullptr) {
+        const char* slash = std::strrchr(info.dli_fname, '/');
+        const char* module = slash != nullptr ? slash + 1 : info.dli_fname;
+        const auto offset = reinterpret_cast<uintptr_t>(address) - reinterpret_cast<uintptr_t>(info.dli_fbase);
+        RT_LOGF(RT_TAG_RUNTIME, "%s%d %p %s+0x%zx%s%s\n", label, index, address, module, static_cast<size_t>(offset),
+                info.dli_sname != nullptr ? " " : "", info.dli_sname != nullptr ? info.dli_sname : "");
+    } else {
+        RT_LOGF(RT_TAG_RUNTIME, "%s%d %p\n", label, index, address);
+    }
+}
+#endif
+
 void DumpHostStackTrace() {
 #if defined(_WIN32)
     static std::atomic_flag s_inProgress = ATOMIC_FLAG_INIT;
@@ -774,6 +799,19 @@ void DumpHostStackTrace() {
     }
     const std::string trace = FormatHostStackTrace(1);
     std::fputs(trace.c_str(), stderr);
+    std::fflush(stderr);
+    s_inProgress.clear();
+#elif defined(__GLIBC__)
+    static std::atomic_flag s_inProgress = ATOMIC_FLAG_INIT;
+    if (s_inProgress.test_and_set()) {
+        return;
+    }
+    std::array<void*, 64> frames{};
+    const int count = backtrace(frames.data(), static_cast<int>(frames.size()));
+    RT_LOGF(RT_TAG_RUNTIME, "Host stack trace (%d frames):\n", count);
+    for (int i = 0; i < count; ++i) {
+        LogHostAddress("  #", i, frames[static_cast<size_t>(i)]);
+    }
     std::fflush(stderr);
     s_inProgress.clear();
 #else
@@ -1231,6 +1269,22 @@ void PosixMemoryFaultHandler(int sig, siginfo_t* info, void* ucontextVoid) {
     popupDetails << ".\n\nThe process transcript and crash log contain the full CPU and stack "
                     "diagnostics.";
     ShowRuntimeFatalPopup("a native crash occurred", popupDetails.str());
+#if defined(__GLIBC__)
+    {
+        char threadName[32] = "?";
+        pthread_getname_np(pthread_self(), threadName, sizeof(threadName));
+        RT_LOGF(RT_TAG_RUNTIME, "Faulting host thread: '%s' (tid %ld)\n", threadName, static_cast<long>(gettid()));
+        if (ucontextVoid != nullptr) {
+            const auto* uc = static_cast<const ucontext_t*>(ucontextVoid);
+#if defined(__aarch64__)
+            LogHostAddress("Faulting pc #", 0, reinterpret_cast<const void*>(uc->uc_mcontext.pc));
+            LogHostAddress("Faulting lr #", 0, reinterpret_cast<const void*>(uc->uc_mcontext.regs[30]));
+#elif defined(__x86_64__)
+            LogHostAddress("Faulting pc #", 0, reinterpret_cast<const void*>(uc->uc_mcontext.gregs[REG_RIP]));
+#endif
+        }
+    }
+#endif
     DumpHostStackTrace();
     WriteFatalLogImpl(sig == SIGBUS ? "sigbus" : "sigsegv");
 
