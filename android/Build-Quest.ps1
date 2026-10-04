@@ -86,7 +86,7 @@ $variant = (Get-Culture).TextInfo.ToTitleCase($Configuration)
 # The Gradle flavour and the -mcpu target its kit must record (headsetCpus in app/build.gradle.kts).
 $flavourDir, $expectedCpu = switch ($Headset) {
     'quest1' { 'quest1', 'kryo' }
-    'frame' { 'steamFrame', 'cortex-x4+nosve' }
+    'frame' { 'steamFrame', 'cortex-x4' }
     default { 'modernQuest', 'cortex-a77' }
 }
 $flavour = $flavourDir.Substring(0, 1).ToUpperInvariant() + $flavourDir.Substring(1)

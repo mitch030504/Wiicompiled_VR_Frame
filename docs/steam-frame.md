@@ -18,7 +18,7 @@ device checks at the end are still to do.
 
 | | Quest flavours | `steamFrame` |
 | --- | --- | --- |
-| CPU target (`kit.json` `androidCpu`) | `cortex-a77` (`kryo` on Quest 1) | `cortex-x4+nosve` |
+| CPU target (`kit.json` `androidCpu`) | `cortex-a77` (`kryo` on Quest 1) | `cortex-x4` |
 | `MKW_ANDROID_HEADSET` | `quest` | `steam_frame` (defines `MKW_HEADSET_STEAM_FRAME`) |
 | Library entry | `LauncherActivity` (Quest 1: `QuestActivity`) | `FrameEntryActivity` |
 | Horizon OS manifest entries | present | removed |
@@ -31,11 +31,12 @@ as they are. The kit's CPU string differs from the Quest ones, which gives the F
 fingerprint: a game built for a Quest is refused on the Frame and the other way round, by the same
 checks that keep Quest 1 and modern Quest games apart.
 
-**CPU.** Every core of the 8 Gen 3 implements ARMv9.2, so the products are tuned for the Cortex-X4.
-`+nosve` matters: clang auto-vectorises with SVE for a `cortex-x4` (a simple loop compiled with
-`-O3` used SVE registers ten times), and Qualcomm's firmware does not expose SVE on this chip, so
-those instructions would end the game with `SIGILL`. With `+nosve` the target features read
-`-sve -sve2 -sve2-bitperm` and the same loop uses NEON only. The flavour-to-CPU map lives once in
+**CPU.** Every core of the 8 Gen 3 implements ARMv9.2, so the products target the Cortex-X4 with
+its whole feature set. That includes SVE and SVE2, which clang auto-vectorises with (a simple loop
+compiled with `-O3` used SVE registers ten times). Phones with this chip do not expose SVE, but the
+Frame's kernel does: `/proc/cpuinfo` lists `sve`, `sve2`, `svei8mm`, `svebf16` and the SVE2 crypto
+extensions, on SteamOS and inside Lepton alike. A build for a device without SVE would need
+`cortex-x4+nosve`. The flavour-to-CPU map lives once in
 `android/app/build.gradle.kts` (`headsetCpus`), which the kit export also reads now instead of
 guessing from the variant name.
 
@@ -131,7 +132,7 @@ the device's extension list.
 On the Windows build host described in `docs/quest-port.md`:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File android/Build-Quest.ps1 -Headset frame               # the steamFrame APK; checks kit.json says cortex-x4+nosve
+powershell -ExecutionPolicy Bypass -File android/Build-Quest.ps1 -Headset frame               # the steamFrame APK; checks kit.json says cortex-x4
 powershell -ExecutionPolicy Bypass -File android/Build-QuestGame.ps1 -Headset frame -Product base -Data <DATA>   # a .wcgame for the Frame's kit
 ```
 
@@ -144,6 +145,33 @@ Lepton opens an adb port (5555 and up) for each running Android instance, reacha
 network. With an Android app running on the Frame, `adb connect <frame-ip>:5555` reaches it from the
 build PC. How the APK reaches the Steam library (adb into a Lepton instance, frame-control, or
 Steam's own sideloading) is to be confirmed on the device.
+
+## What the Frame reported
+
+Read on 2026-10-04 from a Steam Frame running SteamOS (`holo`), kernel 6.18.0, with the commands
+below:
+
+| Reading | SteamOS | Lepton |
+| --- | --- | --- |
+| Page size | 4096 | 4096 |
+| CPU | 8 cores; `sve sve2 svei8mm svebf16 sveaes svepmull svebitperm svesha3 svesm4 i8mm bf16 bti paca pacg ...` | the same |
+| Android | — | 11 (API 30), `ro.product.model` Lepton, device `lepton_arm64_only`, platform `waydroid` |
+| Vulkan driver | — | `ro.hardware.vulkan=freedreno`: Mesa's Turnip, not Qualcomm's driver |
+| OpenXR runtime | SteamVR, `bin/linuxarm64/vrclient.so` (`~/.config/openxr/1/active_runtime.json`) | no package named for XR, Valve, Steam or Khronos |
+
+What follows from them:
+
+- **Fast memory path.** 4 KB pages keep the translated code's flat memory path. A 16 KB kernel
+  would have sent it through the checked path.
+- **CPU target.** The Frame exposes SVE, so the build targets the whole `cortex-x4` (above).
+- **Android version.** API 30 meets the app's minimum of 29.
+- **Driver workarounds.** Lepton is a Waydroid container, and its Vulkan driver is Turnip. The
+  Adreno workarounds in `docs/quest-port.md` were found on Qualcomm's own driver. The vertex padding
+  stays on (it is correct either way); `debug.wiicompiled.vtxpad 0` can check whether Turnip needs it.
+- **Open:** whether Turnip in Lepton imports AHardwareBuffers and sync fds is in the `vkjson`
+  extension list, still to read.
+- **Open:** how an app inside Lepton reaches SteamVR's OpenXR runtime. No broker package shows up,
+  so the Khronos loader's runtime broker may be provided some other way.
 
 ## Device checklist
 

@@ -61,9 +61,9 @@ val headsetCpus = mapOf(
     "modernQuest" to "cortex-a77",
     // Snapdragon 835. cortex-a77 binaries terminate with SIGILL on Quest 1.
     "quest1" to "kryo",
-    // Snapdragon 8 Gen 3 (Cortex-X4, A720 and A520, all ARMv9.2). Its firmware does not expose SVE,
-    // which clang would otherwise auto-vectorise with for a cortex-x4.
-    "steamFrame" to "cortex-x4+nosve",
+    // Steam Frame: Snapdragon 8 Gen 3 (Cortex-X4, A720 and A520, all ARMv9.2). Its kernel exposes
+    // SVE and SVE2 (HWCAP, inside Lepton too), so the whole cortex-x4 feature set is safe.
+    "steamFrame" to "cortex-x4",
 )
 
 // android/nod-jni: nod, the disc image library the PC installer runs as nodtool,
