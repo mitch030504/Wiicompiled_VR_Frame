@@ -146,7 +146,9 @@ private:
                            (1u << SDL_GAMEPAD_BUTTON_START) | (1u << SDL_GAMEPAD_BUTTON_LEFT_STICK) |
                            (1u << SDL_GAMEPAD_BUTTON_RIGHT_STICK) |
                            (1u << SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) |
-                           (1u << SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
+                           (1u << SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER) |
+                           (1u << SDL_GAMEPAD_BUTTON_DPAD_UP) | (1u << SDL_GAMEPAD_BUTTON_DPAD_DOWN) |
+                           (1u << SDL_GAMEPAD_BUTTON_DPAD_LEFT) | (1u << SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
         desc.axis_mask = (1u << SDL_GAMEPAD_AXIS_LEFTX) | (1u << SDL_GAMEPAD_AXIS_LEFTY) |
                          (1u << SDL_GAMEPAD_AXIS_RIGHTX) | (1u << SDL_GAMEPAD_AXIS_RIGHTY) |
                          (1u << SDL_GAMEPAD_AXIS_LEFT_TRIGGER) | (1u << SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
@@ -394,7 +396,7 @@ bool OpenXRInput::CreateActions() {
         const char* localized;
         XrActionType type;
     };
-    const std::array<Spec, 10> specs{{
+    const std::array<Spec, 14> specs{{
         {&m_thumbstick, "thumbstick", "Thumbstick", XR_ACTION_TYPE_VECTOR2F_INPUT},
         {&m_thumbstick_click, "thumbstick_click", "Thumbstick Click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {&m_trigger, "trigger", "Trigger", XR_ACTION_TYPE_FLOAT_INPUT},
@@ -402,6 +404,10 @@ bool OpenXRInput::CreateActions() {
         {&m_button_primary, "button_primary", "A / X", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {&m_button_secondary, "button_secondary", "B / Y", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {&m_menu, "menu", "Menu", XR_ACTION_TYPE_BOOLEAN_INPUT},
+        {&m_dpad_up, "dpad_up", "D-pad Up", XR_ACTION_TYPE_BOOLEAN_INPUT},
+        {&m_dpad_down, "dpad_down", "D-pad Down", XR_ACTION_TYPE_BOOLEAN_INPUT},
+        {&m_dpad_left, "dpad_left", "D-pad Left", XR_ACTION_TYPE_BOOLEAN_INPUT},
+        {&m_dpad_right, "dpad_right", "D-pad Right", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {&m_aim_pose, "aim_pose", "Pointer", XR_ACTION_TYPE_POSE_INPUT},
         {&m_grip_pose, "grip_pose", "Motion", XR_ACTION_TYPE_POSE_INPUT},
         {&m_haptic, "haptic", "Haptic", XR_ACTION_TYPE_VIBRATION_OUTPUT},
@@ -493,6 +499,40 @@ bool OpenXRInput::SuggestBindings() {
         {&m_haptic, "/user/hand/right/output/haptic"},
     };
     suggest("/interaction_profiles/khr/simple_controller", simple, false);
+
+    // The Steam Frame's controllers (XR_VALVE_frame_controller_interaction). Without the profile
+    // SteamVR presents them as Touch controllers, which loses the left D-pad. Its left hand has a
+    // D-pad where Touch has X and Y, a View button for the menu and a shoulder button, which takes
+    // left Y's place as the settings panel's button. Right X, Y, menu and shoulder stay free.
+    const auto& extensions = m_runtime->EnabledExtensions();
+    if (std::find(extensions.begin(), extensions.end(), "XR_VALVE_frame_controller_interaction") !=
+        extensions.end()) {
+        const std::vector<Binding> frame{
+            {&m_thumbstick, "/user/hand/left/input/thumbstick"},
+            {&m_thumbstick, "/user/hand/right/input/thumbstick"},
+            {&m_thumbstick_click, "/user/hand/left/input/thumbstick/click"},
+            {&m_thumbstick_click, "/user/hand/right/input/thumbstick/click"},
+            {&m_trigger, "/user/hand/left/input/trigger/value"},
+            {&m_trigger, "/user/hand/right/input/trigger/value"},
+            {&m_squeeze, "/user/hand/left/input/squeeze/value"},
+            {&m_squeeze, "/user/hand/right/input/squeeze/value"},
+            {&m_button_primary, "/user/hand/right/input/a/click"},
+            {&m_button_secondary, "/user/hand/right/input/b/click"},
+            {&m_button_secondary, "/user/hand/left/input/shoulder/click"},
+            {&m_menu, "/user/hand/left/input/view/click"},
+            {&m_dpad_up, "/user/hand/left/input/dpad_up/click"},
+            {&m_dpad_down, "/user/hand/left/input/dpad_down/click"},
+            {&m_dpad_left, "/user/hand/left/input/dpad_left/click"},
+            {&m_dpad_right, "/user/hand/left/input/dpad_right/click"},
+            {&m_aim_pose, "/user/hand/left/input/aim/pose"},
+            {&m_aim_pose, "/user/hand/right/input/aim/pose"},
+            {&m_grip_pose, "/user/hand/left/input/grip/pose"},
+            {&m_grip_pose, "/user/hand/right/input/grip/pose"},
+            {&m_haptic, "/user/hand/left/output/haptic"},
+            {&m_haptic, "/user/hand/right/output/haptic"},
+        };
+        suggest("/interaction_profiles/valve/frame_controller_valve", frame, false);
+    }
     return true;
 }
 
@@ -868,6 +908,7 @@ void OpenXRInput::Destroy() {
     }
     m_thumbstick = m_thumbstick_click = m_trigger = m_squeeze = XR_NULL_HANDLE;
     m_button_primary = m_button_secondary = m_menu = m_haptic = XR_NULL_HANDLE;
+    m_dpad_up = m_dpad_down = m_dpad_left = m_dpad_right = XR_NULL_HANDLE;
     m_aim_pose = m_grip_pose = XR_NULL_HANDLE;
     m_hand_paths[0] = m_hand_paths[1] = XR_NULL_PATH;
     m_convert_now_to_xr_time = nullptr;
@@ -983,6 +1024,10 @@ void OpenXRInput::Sync(XrTime predicted_display_time, const OpenXRPointerScreen&
         inputs.primary = boolean(m_button_primary, hand, &primary_active);
         inputs.secondary = boolean(m_button_secondary, hand, &secondary_active);
         inputs.menu = boolean(m_menu, hand);
+        inputs.dpad_up = boolean(m_dpad_up, hand);
+        inputs.dpad_down = boolean(m_dpad_down, hand);
+        inputs.dpad_left = boolean(m_dpad_left, hand);
+        inputs.dpad_right = boolean(m_dpad_right, hand);
         inputs.thumbstick_click = boolean(m_thumbstick_click, hand);
         inputs.trigger = scalar(m_trigger, hand);
         inputs.squeeze = scalar(m_squeeze, hand, &squeeze_active);
@@ -1165,6 +1210,10 @@ void OpenXRInput::Sync(XrTime predicted_display_time, const OpenXRPointerScreen&
         pad.buttons[SDL_GAMEPAD_BUTTON_RIGHT_STICK] = right.thumbstick_click;
         pad.buttons[SDL_GAMEPAD_BUTTON_LEFT_SHOULDER] = left.squeeze > 0.5f;
         pad.buttons[SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER] = right.squeeze > 0.5f;
+        pad.buttons[SDL_GAMEPAD_BUTTON_DPAD_UP] = left.dpad_up || right.dpad_up;
+        pad.buttons[SDL_GAMEPAD_BUTTON_DPAD_DOWN] = left.dpad_down || right.dpad_down;
+        pad.buttons[SDL_GAMEPAD_BUTTON_DPAD_LEFT] = left.dpad_left || right.dpad_left;
+        pad.buttons[SDL_GAMEPAD_BUTTON_DPAD_RIGHT] = left.dpad_right || right.dpad_right;
         Relay().Publish(pad);
     }
 

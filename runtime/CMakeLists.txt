@@ -37,6 +37,21 @@ option(MKW_BUILD_PRODUCTS "Build translated WiiCompiled product targets" ON)
 # aurora-main and its third-party tree stay unaffected.
 set(MKW_PROJECT_COMPILE_DEFINITIONS NOMINMAX)
 
+# The Android headset family the build is for (the Gradle flavour passes it). The
+# Steam Frame build runs under SteamVR's Android runtime rather than Horizon OS and
+# takes its own defaults (runtime_config.h) through MKW_HEADSET_STEAM_FRAME. The
+# definition reaches every target below, so the game kit's recorded compile flags
+# carry it too.
+if(MKW_PLATFORM_ANDROID)
+    set(MKW_ANDROID_HEADSET "quest" CACHE STRING "Android headset family: quest (Meta Quest, any flavour) or steam_frame")
+    set_property(CACHE MKW_ANDROID_HEADSET PROPERTY STRINGS quest steam_frame)
+    if(MKW_ANDROID_HEADSET STREQUAL "steam_frame")
+        list(APPEND MKW_PROJECT_COMPILE_DEFINITIONS MKW_HEADSET_STEAM_FRAME=1)
+    elseif(NOT MKW_ANDROID_HEADSET STREQUAL "quest")
+        message(FATAL_ERROR "MKW_ANDROID_HEADSET must be quest or steam_frame, not '${MKW_ANDROID_HEADSET}'")
+    endif()
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 
 # Declared before the vendored libraries so the third-party block below can

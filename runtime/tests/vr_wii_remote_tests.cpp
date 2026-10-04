@@ -282,6 +282,19 @@ void TestButtons() {
     left.menu = true;
     Check((RemoteButtons(left, right) & kButtonHome) == 0, "left menu is no longer HOME");
 
+    // The Steam Frame's left D-pad is the remote's, one bit per direction.
+    left = {};
+    left.dpad_up = true;
+    Check(RemoteButtons(left, right) == kButtonUp, "D-pad up is the remote's up");
+    left = {};
+    left.dpad_down = true;
+    left.dpad_left = true;
+    Check(RemoteButtons(left, right) == (kButtonDown | kButtonLeft), "D-pad down and left together");
+    left = {};
+    right.dpad_right = true;
+    Check(RemoteButtons(left, right) == kButtonRight, "a D-pad on either hand counts");
+    right = {};
+
     left.stick_x = 1.0f;
     left.stick_y = 1.0f;
     const std::array<float, 2> stick = NunchukStick(left);

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Horizon OS entries the Steam Frame has no use for: SteamVR's runtime needs no permission for
+         XR_EXT_hand_tracking, offers no XR_FB_passthrough, and reads none of the com.oculus metadata. -->
+    <uses-permission android:name="horizonos.permission.HAND_TRACKING" tools:node="remove" />
+    <uses-permission android:name="com.oculus.permission.HAND_TRACKING" tools:node="remove" />
+    <uses-feature android:name="com.oculus.feature.PASSTHROUGH" tools:node="remove" />
+    <uses-feature android:name="oculus.software.handtracking" tools:node="remove" />
+
+    <application>
+        <meta-data android:name="com.oculus.supportedDevices" tools:node="remove" />
+        <meta-data android:name="com.oculus.vr.focusaware" tools:node="remove" />
+        <meta-data android:name="com.oculus.trade_cpu_for_gpu_amount" tools:node="remove" />
+
+        <!-- Lepton, SteamOS's Android layer, starts the one real activity that is MAIN and
+             LAUNCHER (it ignores activity-aliases) and runs the app in VR when that activity
+             carries a VR category. This one only routes: to the game when it is ready, with the
+             setup panel underneath (FrameEntryActivity.kt). -->
+        <activity
+            android:name=".FrameEntryActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="org.khronos.openxr.intent.category.IMMERSIVE_HMD" />
+                <category android:name="com.oculus.intent.category.VR" />
+            </intent-filter>
+        </activity>
+
+        <activity android:name=".QuestActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="org.khronos.openxr.intent.category.IMMERSIVE_HMD" />
+                <category android:name="com.oculus.intent.category.VR" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -193,6 +193,11 @@ private:
     XrAction m_button_primary = XR_NULL_HANDLE;   // A / X
     XrAction m_button_secondary = XR_NULL_HANDLE; // B / Y
     XrAction m_menu = XR_NULL_HANDLE;
+    // The Steam Frame's left D-pad (valve/frame_controller_valve); Touch has none.
+    XrAction m_dpad_up = XR_NULL_HANDLE;
+    XrAction m_dpad_down = XR_NULL_HANDLE;
+    XrAction m_dpad_left = XR_NULL_HANDLE;
+    XrAction m_dpad_right = XR_NULL_HANDLE;
     XrAction m_aim_pose = XR_NULL_HANDLE;
     XrAction m_grip_pose = XR_NULL_HANDLE;
     XrAction m_haptic = XR_NULL_HANDLE;

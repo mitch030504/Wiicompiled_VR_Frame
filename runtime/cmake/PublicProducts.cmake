@@ -448,6 +448,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64|X86_64)$")
 elseif(MKW_PLATFORM_ANDROID)
     # Cross-compiled, so "native" would describe the build host. Cortex-A77 is
     # the Snapdragon XR2 Gen 1 (Quest 2) core; Quest 3 / Pro are supersets.
+    # Each Gradle headset flavour passes its own (android/app/build.gradle.kts).
     set(MKW_ANDROID_CPU "cortex-a77" CACHE STRING "AArch64 -mcpu target for the Android products")
     set(MKW_BASELINE_ARCH_FLAG -mcpu=${MKW_ANDROID_CPU})
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")

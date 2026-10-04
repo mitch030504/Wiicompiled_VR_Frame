@@ -341,6 +341,12 @@ struct HandInputs {
     float squeeze = 0.0f;
     float stick_x = 0.0f;
     float stick_y = 0.0f; // +up
+    // A D-pad, which only the Steam Frame's left controller has
+    // (valve/frame_controller_valve).
+    bool dpad_up = false;
+    bool dpad_down = false;
+    bool dpad_left = false;
+    bool dpad_right = false;
 };
 
 // Adapted from DolphinXR's default "OpenXR Wii Remote" profile
@@ -353,6 +359,8 @@ struct HandInputs {
 // HOME has no button; left Y opens the settings panel (openxr_settings_panel.h).
 // The grips press nothing: they take hold of the wheel (openxr_driving.h), and C
 // is the game's look-behind, which a hand on the wheel would otherwise hold down.
+// A controller D-pad (the Steam Frame's left one) is the remote's D-pad; the
+// Frame's left View button is the left menu and its left shoulder the left Y.
 inline uint32_t RemoteButtons(const HandInputs& left, const HandInputs& right) noexcept {
     uint32_t hold = 0;
     const auto press = [&hold](bool held, uint32_t bit) {
@@ -367,6 +375,10 @@ inline uint32_t RemoteButtons(const HandInputs& left, const HandInputs& right) n
     press(right.stick_y < -kPressThreshold, kButtonTwo);
     press(left.primary || left.menu, kButtonPlus);
     press(left.trigger > kPressThreshold, kButtonZ);
+    press(left.dpad_up || right.dpad_up, kButtonUp);
+    press(left.dpad_down || right.dpad_down, kButtonDown);
+    press(left.dpad_left || right.dpad_left, kButtonLeft);
+    press(left.dpad_right || right.dpad_right, kButtonRight);
     return hold;
 }
 

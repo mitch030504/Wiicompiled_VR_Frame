@@ -407,7 +407,8 @@ public:
 #if defined(_WIN32)
         config.required_extensions = {kRequiredAuroraBackend == BACKEND_VULKAN ? "XR_KHR_vulkan_enable2" : "XR_KHR_D3D12_enable"};
         config.optional_extensions = {"XR_KHR_win32_convert_performance_counter_time",
-                                      "XR_FB_display_refresh_rate", "XR_EXT_performance_settings"};
+                                      "XR_FB_display_refresh_rate", "XR_EXT_performance_settings",
+                                      "XR_VALVE_frame_controller_interaction"};
         AddHandMeshExtensions(config);
 #else
         // Either Vulkan binding extension is acceptable; the backend picks
@@ -415,11 +416,13 @@ public:
         config.required_extensions = {"XR_KHR_android_create_instance"};
         // XR_FB_passthrough: the room around the virtual screen (OpenXRPassthrough), asked for
         // whatever [vr] passthrough says, since the setting is live.
+        // XR_VALVE_frame_controller_interaction: the Steam Frame's controllers, D-pad included
+        // (OpenXRInput::SuggestBindings), under SteamVR here or streamed from a PC.
         config.optional_extensions = {"XR_KHR_vulkan_enable2", "XR_KHR_vulkan_enable",
                                       "XR_KHR_convert_timespec_time",
                                       "XR_KHR_android_thread_settings",
                                       "XR_FB_display_refresh_rate", "XR_EXT_performance_settings",
-                                      "XR_FB_passthrough"};
+                                      "XR_FB_passthrough", "XR_VALVE_frame_controller_interaction"};
         AddHandMeshExtensions(config);
         config.instance_create_next = OpenXRAndroidInstanceCreateNext();
 #endif
