@@ -710,6 +710,8 @@ OpenXRFrameStatus OpenXRRuntime::WaitFrame(OpenXRFrame& frame) {
         return OpenXRFrameStatus::Error;
     }
     diagnostics::OnWaitFrame(wait_timer, state.predictedDisplayTime, state.predictedDisplayPeriod);
+    m_last_wait_return = std::chrono::steady_clock::now();
+    m_last_wait_period = state.predictedDisplayPeriod;
 
     frame = {};
     frame.serial = m_next_frame_serial++;

@@ -232,9 +232,11 @@ second. On the Frame, SteamVR answered that by running the app at half rate (the
 doubled the HUD and the menu screen while the head turned. `[vr] repeat_frames` (default on for the
 Frame, off elsewhere, live in the headset panel's VR tab) therefore submits the retained layer, with
 the poses it was rendered for, on every refresh the next eyes are not ready for: the pacing thread
-waits a millisecond for them and otherwise spends the refresh on a keep-alive cycle, which
-xrWaitFrame paces. The summary should then read `predicted-rate=120.0Hz`, about 60 `keepalive` a
-second and 60 `new` layers.
+waits for them until 1.5 ms before the runtime's next wake (a period after the last xrWaitFrame
+returned) and otherwise spends that refresh on a keep-alive cycle, which xrWaitFrame paces. The
+summary should then read `predicted-rate=120.0Hz`, about 60 `keepalive` a second and 60 `new`
+layers. A first version waited only a millisecond, so every packet also spent a refresh on a repeat
+it did not need, the next packet missed the game's next frame, and `new` fell to about 35 a second.
 
 Lepton may decline the request (frame-control found SteamVR keeping its own rate there). The session
 log then says `display refresh rate 120 Hz refused` with the rates it offers, and nothing else
