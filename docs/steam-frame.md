@@ -11,8 +11,11 @@ document covers what differs.
 A native SteamOS ARM64 build is a separate, later piece of work: Linux has no OpenXR graphics backend
 yet (see [A native SteamOS build](#a-native-steamos-build)).
 
-**Status: not yet run on a Steam Frame.** Everything below compiles and is unit-tested, but the
-device checks at the end are still to do.
+**Status: not yet run on a Steam Frame, and the Android backend as it stands cannot present under
+Lepton**: Lepton's Vulkan driver has no external memory or sync fd extensions, which the Quest
+backend's two-device design needs (see [What the Frame reported](#what-the-frame-reported)). The
+flavour, controller, refresh rate and foveation work below stays valid; the eye handoff has to move
+to a single shared device first.
 
 ## What the flavour changes
 
@@ -172,9 +175,17 @@ What follows from them:
 - **Foveation.** The host's Turnip has density maps for non-subsampled images through dynamic
   rendering, what the Dawn patch needs, and both density map offset extensions, which would let
   eye-tracked foveation shift one map instead of switching maps.
-- **Open:** whether Lepton's Android build of Turnip also imports AHardwareBuffers. `cmd gpu
-  vkjson` from the shell lists only instance extensions there (its device entry comes back empty),
-  and Mesa's binaries carry every extension name, so it takes an app inside Lepton to tell.
+- **No buffer sharing between devices in Lepton.** The Vulkan Hardware Capability Viewer (4.03,
+  the last release for Android 11), run inside Lepton, reports Turnip `26.2.99` (Vulkan 1.4.362,
+  display name "Valve Lepton") with `VK_EXT_fragment_density_map`, both density map offset
+  extensions, `VK_VALVE_fragment_density_map_layered`, `VK_KHR_timeline_semaphore` and the
+  maintenance extensions, but **no** `VK_ANDROID_external_memory_android_hardware_buffer`,
+  `VK_KHR_external_memory_fd`, `VK_KHR_external_semaphore_fd` or `VK_KHR_external_fence_fd`. The
+  Quest backend (`openxr_vulkan.cpp`) hands each eye from Dawn's device to its own OpenXR device
+  through exactly those, so it cannot present under Lepton. What can: binding Dawn's own device to
+  the session, as the Windows Vulkan backend (`openxr_vulkan_win32.cpp`) does, so the eyes are
+  copied into the swapchain on Dawn's queue with no sharing at all. That backend is also the core
+  of a native SteamOS build ([below](#a-native-steamos-build)).
 - **Finding the runtime.** An app inside Lepton reaches SteamVR's OpenXR runtime through the system
   runtime file, not a broker. The Khronos loader the game links statically (`DYNAMIC_LOADER OFF`)
   tries the runtime brokers first, then reads `/{product,odm,oem,vendor,system}/etc/openxr/1/active_runtime.json`,
