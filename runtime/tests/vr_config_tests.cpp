@@ -68,6 +68,15 @@ int main() {
     Require(std::string_view(MKW_VR_REFRESH_RATE_DEFAULT_TEXT) == "0");
 #endif
 
+    // [vr] passthrough: Horizon OS's room view, which the Steam Frame build does not offer.
+    Require(Parse("[vr]\npassthrough = false\n").vrPassthrough == false);
+    Require(!Parse("[vr]\n").vrPassthrough.has_value());
+#if defined(MKW_HEADSET_STEAM_FRAME)
+    Require(!RuntimeConfigFile::kVrPassthroughDefault);
+#else
+    Require(RuntimeConfigFile::kVrPassthroughDefault);
+#endif
+
     // [vr] hand_tracking: the cockpit hands follow the headset's hand tracking.
     Require(Parse("[vr]\nhand_tracking = true\n").vrHandTracking == true);
     Require(Parse("[vr]\nhand_tracking = false\n").vrHandTracking == false);

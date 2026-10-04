@@ -189,8 +189,9 @@ inline constexpr uint32_t kPostProcessingBloomPath = 0x10u;
 inline constexpr uint32_t kDisabledPostProcessingPathsDefault = kPostProcessingBloomPath;
 
 // Headset eye size as a fraction of what the OpenXR runtime recommends. A
-// standalone headset renders on a mobile GPU, so the Quest starts below it;
-// the launcher's first Config.toml (GameStorage.kt) writes the same value.
+// standalone headset renders on a mobile GPU, so the Quest and the Steam Frame
+// start below it; the launcher's first Config.toml (GameStorage.kt) writes the
+// same value.
 #if defined(__ANDROID__)
 inline constexpr float kVrRenderScaleDefault = 0.8f;
 #define MKW_VR_RENDER_SCALE_DEFAULT_TEXT "0.8"
@@ -306,7 +307,8 @@ inline bool IsSupportedVrRefreshRate(uint32_t value) {
 // 4x4 pixel blocks, the higher the level the closer to the centre. Whether the
 // GPU device gets fragment density maps at all is decided at launch, so going
 // from "off" to a level takes a restart; between levels and back to "off" it is
-// live. The Quest starts at "medium"; elsewhere it does nothing.
+// live. The standalone headsets (Quest, Steam Frame) start at "medium";
+// elsewhere it does nothing.
 #if defined(__ANDROID__)
 inline constexpr const char* kVrFoveationDefault = "medium";
 #else
@@ -1719,9 +1721,16 @@ inline bool SetVrRaceView(VrRaceView view) {
 
 // The room, through the headset's cameras, around the menu screen and every
 // other virtual screen, a Flat Screen race included, and around the immersive
-// window (never a fully immersive race). Only the Quest offers it; the
-// launcher's Settings page shows the same default.
-inline bool VrPassthrough(bool fallback = true) {
+// window (never a fully immersive race). Only the Quest offers it
+// (XR_FB_passthrough, which SteamVR does not have); the launcher's Settings
+// page shows the same default.
+#if defined(MKW_HEADSET_STEAM_FRAME)
+inline constexpr bool kVrPassthroughDefault = false;
+#else
+inline constexpr bool kVrPassthroughDefault = true;
+#endif
+
+inline bool VrPassthrough(bool fallback = kVrPassthroughDefault) {
     return Get().vrPassthrough.value_or(fallback);
 }
 

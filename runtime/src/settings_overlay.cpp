@@ -147,7 +147,9 @@ int g_vrRaceView = static_cast<int>(RuntimeConfigFile::GetVrRaceView());
 bool g_vrFlatScreen = g_vrRaceView == static_cast<int>(RuntimeConfigFile::VrRaceView::FlatScreen);
 constexpr std::array<const char*, 3> kVrRaceViewLabels{"Immersive", "Immersive window", "Flat screen"};
 #if defined(__ANDROID__)
+#if !defined(MKW_HEADSET_STEAM_FRAME)
 bool g_vrPassthrough = RuntimeConfigFile::VrPassthrough();
+#endif
 bool g_vrHandTracking = RuntimeConfigFile::VrHandTracking();
 // Menu labels for the foveation levels, index-matched to RuntimeConfigFile::kVrFoveationLevels and to
 // aurora_set_stereo_foveation.
@@ -1489,6 +1491,7 @@ void DrawVrSettings() {
         }
     }
 #if defined(__ANDROID__)
+#if !defined(MKW_HEADSET_STEAM_FRAME)
     if (ImGui::Checkbox("Passthrough around the menu screen", &g_vrPassthrough)) {
         mkw::vr::OpenXRSetPassthrough(g_vrPassthrough);
         RuntimeConfigFile::SetVrPassthrough(g_vrPassthrough);
@@ -1500,6 +1503,7 @@ void DrawVrSettings() {
             "fully virtual; the immersive window and the Flat Screen race have the room "
             "around them too. Applies immediately.");
     }
+#endif
     // Shows the live level Aurora holds.
     g_vrFoveation = static_cast<int>(aurora_get_stereo_foveation());
     if (ImGui::Combo("Foveated rendering", &g_vrFoveation, kVrFoveationLabels.data(),

@@ -423,7 +423,11 @@ public:
                                       "XR_KHR_convert_timespec_time",
                                       "XR_KHR_android_thread_settings",
                                       "XR_FB_display_refresh_rate", "XR_EXT_performance_settings",
-                                      "XR_FB_passthrough", "XR_VALVE_frame_controller_interaction"};
+                                      "XR_VALVE_frame_controller_interaction"};
+#if !defined(MKW_HEADSET_STEAM_FRAME)
+        // Horizon OS's room view; the Steam Frame build neither asks for it nor offers the setting.
+        config.optional_extensions.push_back("XR_FB_passthrough");
+#endif
         AddHandMeshExtensions(config);
         config.instance_create_next = OpenXRAndroidInstanceCreateNext();
 #endif
