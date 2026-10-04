@@ -259,6 +259,14 @@ class SettingsPage(
                 read = { stringIndex(it, "vr", "foveation", FOVEATION_LEVELS, FOVEATION_DEFAULT) },
                 write = { c, index -> c.setString("vr", "foveation", FOVEATION_LEVELS[index]) },
             )
+            // runtime_config.h's kVrEyeTrackedFoveationDefault: on for the Steam Frame, whose eyes are
+            // tracked; off elsewhere, since Horizon OS asks for an eye tracking permission.
+            toggle(
+                R.string.vr_eye_tracked_foveation, R.string.vr_eye_tracked_foveation_helper,
+                read = { it.bool("vr", "eye_tracked_foveation") ?: BuildConfig.STEAM_FRAME },
+                write = { c, value -> c.setBool("vr", "eye_tracked_foveation", value) },
+                enabledIf = { stringIndex(it, "vr", "foveation", FOVEATION_LEVELS, FOVEATION_DEFAULT) != 0 },
+            )
             choice(
                 R.string.vr_interpolation, R.string.vr_interpolation_helper,
                 listOf(activity.getString(R.string.vr_interpolation_off), activity.getString(R.string.vr_interpolation_auto), "72 FPS", "90 FPS", "120 FPS"),

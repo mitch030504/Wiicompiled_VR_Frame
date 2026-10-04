@@ -9,6 +9,7 @@
 #include "runtime_config.h"
 #include "gx_thread.h"
 #include "runtime_log.h"
+#include "vr/eye_gaze.h"
 #include "vr/mkw_vr_culling.h"
 #include "vr/mkw_vr_first_person.h"
 #include "vr/mkw_vr_policy.h"
@@ -428,6 +429,10 @@ public:
         // Horizon OS's room view; the Steam Frame build neither asks for it nor offers the setting.
         config.optional_extensions.push_back("XR_FB_passthrough");
 #endif
+        // Eye-tracked foveation: the gaze the density maps centre on (OpenXRInput::EyeGaze).
+        if (RuntimeConfigFile::VrEyeTrackedFoveation()) {
+            config.optional_extensions.push_back("XR_EXT_eye_gaze_interaction");
+        }
         AddHandMeshExtensions(config);
         config.instance_create_next = OpenXRAndroidInstanceCreateNext();
 #endif
@@ -1465,7 +1470,28 @@ private:
                          position_valid && base_position_valid_, units_per_meter,
                          lean_back_radians, destination.eyes[eye].viewFromCenter);
         }
+        BuildEyeGaze(source, destination);
         BuildCockpit(source, position_valid, units_per_meter, lean_back_radians, destination.cockpit);
+    }
+
+    // Eye-tracked foveation: where the eyes look, in each eye's own view (the views may be canted),
+    // from the gaze the input located for this packet's display time. Without a tracked gaze, or
+    // with the setting off, Aurora centres foveation on each eye's forward direction.
+    void BuildEyeGaze(const OpenXRBackendFrame& source, AuroraStereoFrame& destination) const noexcept {
+        XrQuaternionf gaze{};
+        if (input_ == nullptr || !RuntimeConfigFile::VrEyeTrackedFoveation() || !input_->EyeGaze(&gaze)) {
+            return;
+        }
+        bool valid = true;
+        for (uint32_t eye = 0; eye < kOpenXREyeCount; ++eye) {
+            const XrQuaternionf& view = source.xr_frame.views[eye].pose.orientation;
+            const eye_gaze::Tangents seen =
+                eye_gaze::InEye({gaze.x, gaze.y, gaze.z, gaze.w}, {view.x, view.y, view.z, view.w});
+            valid = valid && seen.valid;
+            destination.gaze[eye][0] = seen.x;
+            destination.gaze[eye][1] = seen.y;
+        }
+        destination.gazeValid = valid;
     }
 
     // The first-person cockpit's hands and separate wheel, in the seated frame

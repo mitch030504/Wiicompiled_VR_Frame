@@ -156,6 +156,7 @@ bool g_vrHandTracking = RuntimeConfigFile::VrHandTracking();
 constexpr std::array<const char*, 4> kVrFoveationLabels{"Off", "Low", "Medium", "High"};
 static_assert(kVrFoveationLabels.size() == RuntimeConfigFile::kVrFoveationLevels.size());
 int g_vrFoveation = static_cast<int>(RuntimeConfigFile::VrFoveationLevelIndex(RuntimeConfigFile::VrFoveation()));
+bool g_vrEyeTrackedFoveation = RuntimeConfigFile::VrEyeTrackedFoveation();
 #endif
 bool g_vrFirstPerson = RuntimeConfigFile::VrFirstPerson(false);
 bool g_vrFirstPersonToggleClick = RuntimeConfigFile::VrFirstPersonToggleClick();
@@ -1522,6 +1523,15 @@ void DrawVrSettings() {
                       : "Shades the edges of the race view in 2x2, then 4x4 pixel blocks, where the "
                         "lenses blur the picture anyway, to free GPU time. This session started with it "
                         "off, or without a GPU that supports it: a new level applies after a restart.");
+    }
+    if (ImGui::Checkbox("Foveation follows the eyes", &g_vrEyeTrackedFoveation)) {
+        RuntimeConfigFile::SetVrEyeTrackedFoveation(g_vrEyeTrackedFoveation);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(
+            "With a headset that tracks the eyes (the Steam Frame), the sharp centre of the foveated "
+            "race view moves to where you look instead of staying straight ahead. Turning it off "
+            "applies immediately; turning it on needs a restart if the session started without it.");
     }
 #endif
     {

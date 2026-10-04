@@ -68,6 +68,17 @@ int main() {
     Require(std::string_view(MKW_VR_REFRESH_RATE_DEFAULT_TEXT) == "0");
 #endif
 
+    // [vr] eye_tracked_foveation: the foveation centre follows the gaze, on the Steam Frame by default.
+    Require(Parse("[vr]\neye_tracked_foveation = true\n").vrEyeTrackedFoveation == true);
+    Require(Parse("[vr]\neye_tracked_foveation = false\n").vrEyeTrackedFoveation == false);
+    Require(!Parse("[vr]\neye_tracked_foveation = 1\n").vrEyeTrackedFoveation.has_value());
+    Require(!Parse("[vr]\n").vrEyeTrackedFoveation.has_value());
+#if defined(MKW_HEADSET_STEAM_FRAME)
+    Require(RuntimeConfigFile::kVrEyeTrackedFoveationDefault);
+#else
+    Require(!RuntimeConfigFile::kVrEyeTrackedFoveationDefault);
+#endif
+
     // [vr] passthrough: Horizon OS's room view, which the Steam Frame build does not offer.
     Require(Parse("[vr]\npassthrough = false\n").vrPassthrough == false);
     Require(!Parse("[vr]\n").vrPassthrough.has_value());

@@ -130,6 +130,15 @@ public:
     // The tracked hands' joints in the seated frame, as the last Sync located
     // them; read on the pacing thread only.
     const hand_tracking::HandJointFrame& HandJoints() const noexcept { return m_joint_frame; }
+    // Eye-tracked foveation: the gaze pose's orientation in the app space, as the last Sync located
+    // it for the frame's display time. False while there is no tracked gaze (no eye tracker, a
+    // blink, or the runtime not offering XR_EXT_eye_gaze_interaction).
+    bool EyeGaze(XrQuaternionf* orientation) const noexcept {
+        if (m_gaze_valid && orientation != nullptr) {
+            *orientation = m_gaze_orientation;
+        }
+        return m_gaze_valid;
+    }
     // A hand's tracker while tracked hands keep one, else XR_NULL_HANDLE.
     XrHandTrackerEXT HandTracker(uint32_t hand) const noexcept {
         return hand < kHands ? m_hand_trackers[hand] : XR_NULL_HANDLE;
@@ -150,6 +159,9 @@ private:
 
     bool CreateActions();
     bool SuggestBindings();
+    // XR_EXT_eye_gaze_interaction is enabled and the system has an eye tracker.
+    bool EyeGazeOffered();
+    void LocateEyeGaze(XrTime time);
     void CreatePoseSpaces();
     void DestroyPoseSpaces();
     void LoadInputClock();
@@ -201,6 +213,12 @@ private:
     XrAction m_aim_pose = XR_NULL_HANDLE;
     XrAction m_grip_pose = XR_NULL_HANDLE;
     XrAction m_haptic = XR_NULL_HANDLE;
+    // The eyes' gaze (XR_EXT_eye_gaze_interaction), one pose for both, and where it was last located.
+    XrAction m_gaze_pose = XR_NULL_HANDLE;
+    XrSpace m_gaze_space = XR_NULL_HANDLE;
+    XrQuaternionf m_gaze_orientation{0.0f, 0.0f, 0.0f, 1.0f};
+    bool m_gaze_valid = false;
+    bool m_gaze_logged = false;
     XrPath m_hand_paths[kHands]{};
     XrSpace m_aim_spaces[kHands]{};
     XrSpace m_grip_spaces[kHands]{};

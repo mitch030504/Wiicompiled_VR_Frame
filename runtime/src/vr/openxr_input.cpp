@@ -423,6 +423,36 @@ bool OpenXRInput::CreateActions() {
             return false;
         }
     }
+    // Eye-tracked foveation: one gaze pose for both eyes, with no hand to name.
+    if (EyeGazeOffered()) {
+        XrActionCreateInfo info{XR_TYPE_ACTION_CREATE_INFO};
+        info.actionType = XR_ACTION_TYPE_POSE_INPUT;
+        std::strncpy(info.actionName, "eye_gaze", XR_MAX_ACTION_NAME_SIZE - 1);
+        std::strncpy(info.localizedActionName, "Eye Gaze", XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
+        if (!Check(xrCreateAction(m_action_set, &info, &m_gaze_pose), "eye_gaze")) {
+            // Not worth the controllers: carry on with the fixed foveation centre.
+            m_gaze_pose = XR_NULL_HANDLE;
+        }
+    }
+    return true;
+}
+
+bool OpenXRInput::EyeGazeOffered() {
+    const auto& extensions = m_runtime->EnabledExtensions();
+    if (std::find(extensions.begin(), extensions.end(), "XR_EXT_eye_gaze_interaction") == extensions.end()) {
+        return false;
+    }
+    XrSystemEyeGazeInteractionPropertiesEXT gaze{XR_TYPE_SYSTEM_EYE_GAZE_INTERACTION_PROPERTIES_EXT};
+    XrSystemProperties properties{XR_TYPE_SYSTEM_PROPERTIES, &gaze};
+    const XrResult result = xrGetSystemProperties(m_runtime->Instance(), m_runtime->SystemId(), &properties);
+    if (XR_FAILED(result) || gaze.supportsEyeGazeInteraction != XR_TRUE) {
+        std::ostringstream message;
+        message << "OpenXR eye gaze: the runtime reports no eye tracker (" << result
+                << "); foveation stays on each eye's forward direction";
+        Log(OpenXRLogLevel::Info, message.str());
+        return false;
+    }
+    Log(OpenXRLogLevel::Info, "OpenXR eye gaze: available; foveation follows the gaze ([vr] eye_tracked_foveation)");
     return true;
 }
 
@@ -533,6 +563,10 @@ bool OpenXRInput::SuggestBindings() {
         };
         suggest("/interaction_profiles/valve/frame_controller_valve", frame, false);
     }
+    if (m_gaze_pose != XR_NULL_HANDLE) {
+        suggest("/interaction_profiles/ext/eye_gaze_interaction",
+                {{&m_gaze_pose, "/user/eyes_ext/input/gaze_ext/pose"}}, false);
+    }
     return true;
 }
 
@@ -558,9 +592,56 @@ void OpenXRInput::CreatePoseSpaces() {
             }
         }
     }
+    if (m_gaze_pose != XR_NULL_HANDLE) {
+        XrActionSpaceCreateInfo info{XR_TYPE_ACTION_SPACE_CREATE_INFO};
+        info.action = m_gaze_pose;
+        info.poseInActionSpace.orientation.w = 1.0f;
+        const XrResult result = xrCreateActionSpace(m_runtime->Session(), &info, &m_gaze_space);
+        m_runtime->ObserveResult(result);
+        if (XR_FAILED(result)) {
+            m_gaze_space = XR_NULL_HANDLE;
+            std::ostringstream message;
+            message << "xrCreateActionSpace(eye gaze) failed (" << result
+                    << "); foveation stays on each eye's forward direction";
+            Log(OpenXRLogLevel::Warning, message.str());
+        }
+    }
+}
+
+// Eye-tracked foveation: the gaze for the display time the eyes are rendered for, the time their
+// views are located at, so the full-density region lands where the eyes look in that frame. Only a
+// tracked orientation counts; the runtime reports an untracked one through blinks.
+void OpenXRInput::LocateEyeGaze(XrTime time) {
+    m_gaze_valid = false;
+    if (m_gaze_space == XR_NULL_HANDLE) {
+        return;
+    }
+    XrActionStateGetInfo info{XR_TYPE_ACTION_STATE_GET_INFO};
+    info.action = m_gaze_pose;
+    XrActionStatePose state{XR_TYPE_ACTION_STATE_POSE};
+    if (XR_FAILED(xrGetActionStatePose(m_runtime->Session(), &info, &state)) || state.isActive != XR_TRUE) {
+        return;
+    }
+    constexpr XrSpaceLocationFlags kTracked =
+        XR_SPACE_LOCATION_ORIENTATION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT;
+    XrSpaceLocation location{XR_TYPE_SPACE_LOCATION};
+    if (XR_FAILED(xrLocateSpace(m_gaze_space, m_runtime->AppSpace(), time, &location)) ||
+        (location.locationFlags & kTracked) != kTracked) {
+        return;
+    }
+    m_gaze_orientation = location.pose.orientation;
+    m_gaze_valid = true;
+    if (!m_gaze_logged) {
+        m_gaze_logged = true;
+        Log(OpenXRLogLevel::Info, "OpenXR eye gaze: tracking");
+    }
 }
 
 void OpenXRInput::DestroyPoseSpaces() {
+    if (m_gaze_space != XR_NULL_HANDLE) {
+        xrDestroySpace(m_gaze_space);
+        m_gaze_space = XR_NULL_HANDLE;
+    }
     for (uint32_t hand = 0; hand < kHandCount; ++hand) {
         for (XrSpace* space : {&m_aim_spaces[hand], &m_grip_spaces[hand]}) {
             if (*space != XR_NULL_HANDLE) {
@@ -909,6 +990,9 @@ void OpenXRInput::Destroy() {
     m_thumbstick = m_thumbstick_click = m_trigger = m_squeeze = XR_NULL_HANDLE;
     m_button_primary = m_button_secondary = m_menu = m_haptic = XR_NULL_HANDLE;
     m_dpad_up = m_dpad_down = m_dpad_left = m_dpad_right = XR_NULL_HANDLE;
+    m_gaze_pose = XR_NULL_HANDLE;
+    m_gaze_valid = false;
+    m_gaze_logged = false;
     m_aim_pose = m_grip_pose = XR_NULL_HANDLE;
     m_hand_paths[0] = m_hand_paths[1] = XR_NULL_PATH;
     m_convert_now_to_xr_time = nullptr;
@@ -933,6 +1017,7 @@ void OpenXRInput::Idle() {
     }
     m_pointer.Reset();
     m_horizon = {1.0f, 0.0f};
+    m_gaze_valid = false;
     OpenXRPublishWiiRemote(Relay().JoystickId(), OpenXRWiiRemoteSample{});
     // The panel stays as it was; only what the controllers were holding is forgotten.
     m_panel_controls.Reset();
@@ -976,6 +1061,7 @@ void OpenXRInput::Sync(XrTime predicted_display_time, const OpenXRPointerScreen&
         Idle();
         return;
     }
+    LocateEyeGaze(predicted_display_time);
 
     // `active`, when given, says whether the action is bound to a source the
     // runtime has right now (a controller, or a tracked hand).

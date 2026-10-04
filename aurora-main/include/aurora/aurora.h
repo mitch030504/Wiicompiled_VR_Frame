@@ -209,6 +209,11 @@ typedef struct {
   // everywhere else, for the host's compositor to show its own background
   // (the room, on a headset with passthrough) around it.
   bool window;
+  // Eye-tracked foveation (aurora_set_stereo_foveation), while gazeValid: where the player looks, in
+  // tangents of each eye's view (x right, y up, as in the projection's frustum). The immersive eyes'
+  // full-density region then centres there instead of on each eye's forward direction.
+  float gaze[AURORA_STEREO_EYE_COUNT][2];
+  bool gazeValid;
 } AuroraStereoFrame;
 
 /**

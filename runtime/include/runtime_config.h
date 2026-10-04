@@ -92,6 +92,7 @@ struct RuntimeUserConfig {
     std::optional<bool> vrWheelHaptics;
     std::optional<std::string> vrPerformanceLevel;
     std::optional<std::string> vrFoveation;
+    std::optional<bool> vrEyeTrackedFoveation;
     std::optional<std::string> vrRecenterKey;
     std::optional<float> vrLeanBackDegrees;
     // F10 > Diagnostics: OpenXR pacing and presentation logging in console.log.
@@ -319,6 +320,16 @@ inline constexpr std::array<std::string_view, 4> kVrFoveationLevels{"off", "low"
 inline bool IsSupportedVrFoveation(std::string_view value) {
     return std::find(kVrFoveationLevels.begin(), kVrFoveationLevels.end(), value) != kVrFoveationLevels.end();
 }
+
+// Eye-tracked foveation: with a headset that tracks the eyes (XR_EXT_eye_gaze_interaction, the Steam
+// Frame's), the foveation level's full-density region follows the gaze instead of staying on each
+// eye's forward direction. Live while the session's runtime offered the gaze at launch. On by
+// default on the Steam Frame; elsewhere off, since Horizon OS asks for an eye tracking permission.
+#if defined(MKW_HEADSET_STEAM_FRAME)
+inline constexpr bool kVrEyeTrackedFoveationDefault = true;
+#else
+inline constexpr bool kVrEyeTrackedFoveationDefault = false;
+#endif
 
 // The level aurora_set_stereo_foveation takes; anything unknown is off.
 inline uint32_t VrFoveationLevelIndex(std::string_view value) {
@@ -891,6 +902,7 @@ inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
         value && IsSupportedVrFoveation(*value)) {
         config.vrFoveation = *value;
     }
+    config.vrEyeTrackedFoveation = FindConfigValue<bool>(document, "vr", "eye_tracked_foveation");
     if (auto value = FindConfigValue<std::string>(document, "vr", "mirror_view");
         value && IsSupportedVrMirrorView(*value)) {
         config.vrMirrorView = *value;
@@ -1301,6 +1313,11 @@ inline bool SetVrFoveation(std::string value) {
     }
     Mutable().vrFoveation = value;
     return WriteSetting("vr", "foveation", FormatString(value));
+}
+
+inline bool SetVrEyeTrackedFoveation(bool value) {
+    Mutable().vrEyeTrackedFoveation = value;
+    return WriteSetting("vr", "eye_tracked_foveation", value ? "true" : "false");
 }
 
 inline bool SetVrFirstPersonSeat(std::string value) {
@@ -1826,6 +1843,10 @@ inline std::string VrPerformanceLevel(std::string fallback = kVrPerformanceLevel
 inline std::string VrFoveation(std::string fallback = kVrFoveationDefault) {
     const auto& value = Get().vrFoveation;
     return value && IsSupportedVrFoveation(*value) ? *value : std::move(fallback);
+}
+
+inline bool VrEyeTrackedFoveation(bool fallback = kVrEyeTrackedFoveationDefault) {
+    return Get().vrEyeTrackedFoveation.value_or(fallback);
 }
 
 inline int32_t VrFirstPersonHiddenModel(int32_t fallback = kVrFirstPersonHiddenModelDefault) {
