@@ -39,7 +39,7 @@ int main() {
     Require(!Parse("[vr]\nfoveation = \"ultra\"\n").vrFoveation.has_value());
     Require(!Parse("[vr]\nfoveation = 2\n").vrFoveation.has_value());
     Require(!Parse("[vr]\n").vrFoveation.has_value());
-#if defined(__ANDROID__)
+#if defined(MKW_VR_STANDALONE)
     Require(std::string_view(RuntimeConfigFile::kVrFoveationDefault) == "medium");
 #else
     Require(std::string_view(RuntimeConfigFile::kVrFoveationDefault) == "off");
@@ -101,7 +101,7 @@ int main() {
     Require(Parse("[vr]\nobject_culling = false\n").vrObjectCulling == false);
     Require(!Parse("[vr]\n").vrObjectCulling.has_value());
     Require(!Parse("[vr]\nobject_culling = 0\n").vrObjectCulling.has_value());
-#if defined(__ANDROID__)
+#if defined(MKW_VR_STANDALONE)
     Require(RuntimeConfigFile::kVrObjectCullingDefault);
     Require(std::string_view(MKW_VR_OBJECT_CULLING_DEFAULT_TOML) == "true");
 #else

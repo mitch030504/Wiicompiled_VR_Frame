@@ -745,6 +745,11 @@ private:
         // launched with foveation off does without them.
         aurora_config.xrFragmentDensityMap = RuntimeConfigFile::VrFoveation() != "off";
 #endif
+#if defined(MKW_HEADSET_STEAM_FRAME) && !defined(__ANDROID__)
+        // The Frame's native build: the headset is the only display anyone looks at, so the
+        // desktop window is neither presented nor fully rendered, as on Android.
+        aurora_config.xrHeadsetOnly = true;
+#endif
 #if defined(_WIN32)
         if (kRequiredAuroraBackend != BACKEND_D3D12) return;
         const auto& requirements = backend_->GraphicsRequirements();

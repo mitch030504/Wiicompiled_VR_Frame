@@ -1,5 +1,12 @@
 #pragma once
 
+// The standalone headsets: the Quest (Android) and the Steam Frame, in its Android flavour and its
+// native SteamOS build. They render on a mobile GPU with a game thread that is the bottleneck, so
+// they share the defaults below and the headset panel's foveation and tracked-hands rows.
+#if defined(__ANDROID__) || defined(MKW_HEADSET_STEAM_FRAME)
+#define MKW_VR_STANDALONE 1
+#endif
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -193,7 +200,7 @@ inline constexpr uint32_t kDisabledPostProcessingPathsDefault = kPostProcessingB
 // standalone headset renders on a mobile GPU, so the Quest and the Steam Frame
 // start below it; the launcher's first Config.toml (GameStorage.kt) writes the
 // same value.
-#if defined(__ANDROID__)
+#if defined(MKW_VR_STANDALONE)
 inline constexpr float kVrRenderScaleDefault = 0.8f;
 #define MKW_VR_RENDER_SCALE_DEFAULT_TEXT "0.8"
 #else
@@ -256,7 +263,7 @@ inline constexpr bool kVrCockpitItemThrowDefault = true;
 // draws them by default; the Quest keeps the game's culling, since every
 // extra model costs its GPU twice. The macro is the same default for the
 // config file written on first launch.
-#if defined(__ANDROID__)
+#if defined(MKW_VR_STANDALONE)
 inline constexpr bool kVrObjectCullingDefault = true;
 #define MKW_VR_OBJECT_CULLING_DEFAULT_TOML "true"
 #else
@@ -310,7 +317,7 @@ inline bool IsSupportedVrRefreshRate(uint32_t value) {
 // from "off" to a level takes a restart; between levels and back to "off" it is
 // live. The standalone headsets (Quest, Steam Frame) start at "medium";
 // elsewhere it does nothing.
-#if defined(__ANDROID__)
+#if defined(MKW_VR_STANDALONE)
 inline constexpr const char* kVrFoveationDefault = "medium";
 #else
 inline constexpr const char* kVrFoveationDefault = "off";
@@ -1646,9 +1653,10 @@ inline bool ShowFps(bool fallback = false) {
 }
 
 // Runs the host side of the GX pipeline on its own thread (gx_thread.h). On by
-// default on the Quest, where the game thread is the bottleneck; opt-in elsewhere.
+// default on the standalone headsets, where the game thread is the bottleneck;
+// opt-in elsewhere.
 inline bool GxThread() {
-#if defined(__ANDROID__)
+#if defined(MKW_VR_STANDALONE)
     return Get().gxThread.value_or(true);
 #else
     return Get().gxThread.value_or(false);

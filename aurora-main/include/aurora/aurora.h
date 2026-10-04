@@ -289,6 +289,10 @@ typedef struct {
   bool hasD3D12AdapterLuid;
   uint32_t d3d12AdapterLuidLow;
   int32_t d3d12AdapterLuidHigh;
+  // Nobody watches the desktop window while the headset runs (a standalone
+  // headset such as the Steam Frame's native build): skip presenting it and stop
+  // the mono render after the last pass the eyes sample, as Android always does.
+  bool xrHeadsetOnly;
 } AuroraConfig;
 
 typedef struct {

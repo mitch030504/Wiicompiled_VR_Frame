@@ -146,8 +146,8 @@ bool g_vrHudVirtualScreen = RuntimeConfigFile::VrHudVirtualScreen(true);
 int g_vrRaceView = static_cast<int>(RuntimeConfigFile::GetVrRaceView());
 bool g_vrFlatScreen = g_vrRaceView == static_cast<int>(RuntimeConfigFile::VrRaceView::FlatScreen);
 constexpr std::array<const char*, 3> kVrRaceViewLabels{"Immersive", "Immersive window", "Flat screen"};
-#if defined(__ANDROID__)
-#if !defined(MKW_HEADSET_STEAM_FRAME)
+#if defined(MKW_VR_STANDALONE)
+#if defined(__ANDROID__) && !defined(MKW_HEADSET_STEAM_FRAME)
 bool g_vrPassthrough = RuntimeConfigFile::VrPassthrough();
 #endif
 bool g_vrHandTracking = RuntimeConfigFile::VrHandTracking();
@@ -1260,7 +1260,7 @@ void DrawVrSteeringWheelSettings() {
                           "trailed item.");
     }
     ImGui::EndDisabled();
-#if defined(__ANDROID__)
+#if defined(MKW_VR_STANDALONE)
     ImGui::BeginDisabled(!g_vrHandSteering && g_vrCockpitItemHand == 2);
     if (ImGui::Checkbox("Tracked hands", &g_vrHandTracking)) {
         RuntimeConfigFile::SetVrHandTracking(g_vrHandTracking);
@@ -1491,8 +1491,8 @@ void DrawVrSettings() {
                                 eyes.scaled_height, g_vrRenderScalePercent);
         }
     }
-#if defined(__ANDROID__)
-#if !defined(MKW_HEADSET_STEAM_FRAME)
+#if defined(MKW_VR_STANDALONE)
+#if defined(__ANDROID__) && !defined(MKW_HEADSET_STEAM_FRAME)
     if (ImGui::Checkbox("Passthrough around the menu screen", &g_vrPassthrough)) {
         mkw::vr::OpenXRSetPassthrough(g_vrPassthrough);
         RuntimeConfigFile::SetVrPassthrough(g_vrPassthrough);
@@ -1829,7 +1829,7 @@ void DrawVrCameraSettings() {
         RuntimeConfigFile::SetVrHandSteering(g_vrHandSteering);
         RuntimeConfigFile::SetVrCockpitItemHand(RuntimeConfigFile::kVrCockpitItemHandDefault);
         RuntimeConfigFile::SetVrCockpitItemThrow(g_vrCockpitItemThrow);
-#if defined(__ANDROID__)
+#if defined(MKW_VR_STANDALONE)
         g_vrHandTracking = RuntimeConfigFile::kVrHandTrackingDefault;
         RuntimeConfigFile::SetVrHandTracking(g_vrHandTracking);
 #endif
@@ -2531,7 +2531,7 @@ void InitializeRuntimeSettings() noexcept {
     aurora_set_display_mode(static_cast<AuroraDisplayMode>(g_displayMode));
     g_displayMode = static_cast<int>(aurora_get_display_mode());
     aurora_set_disable_copy_filter(g_disableCopyFilter);
-#if defined(__ANDROID__)
+#if defined(MKW_VR_STANDALONE)
     aurora_set_stereo_foveation(static_cast<uint32_t>(g_vrFoveation));
 #endif
     aurora_set_stereo_mirror_view(static_cast<AuroraStereoMirrorView>(g_vrMirrorView));

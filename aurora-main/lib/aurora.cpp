@@ -1416,7 +1416,7 @@ bool headset_owns_display() noexcept {
 #if defined(__ANDROID__)
   return stereo_frame_provider_active();
 #else
-  return false;
+  return g_config.xrHeadsetOnly && stereo_frame_provider_active();
 #endif
 }
 
