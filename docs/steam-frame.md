@@ -156,7 +156,7 @@ below:
 | Page size | 4096 | 4096 |
 | CPU | 8 cores; `sve sve2 svei8mm svebf16 sveaes svepmull svebitperm svesha3 svesm4 i8mm bf16 bti paca pacg ...` | the same |
 | Android | — | 11 (API 30, LineageOS), `ro.product.model` Lepton, device `lepton_arm64_only`, platform `waydroid`, `ro.steam.running_in_app_container=true` |
-| Vulkan driver | — | `ro.hardware.vulkan=freedreno`: Mesa's Turnip, not Qualcomm's driver |
+| Vulkan driver | Turnip, Mesa 26.3.0-devel, Vulkan 1.4.362: `VK_EXT_fragment_density_map` (non-subsampled images, not dynamic), `VK_EXT_fragment_density_map_offset` and `VK_QCOM_fragment_density_map_offset`, `VK_KHR_external_{memory,semaphore,fence}_fd`, `VK_EXT_external_memory_dma_buf`, `VK_EXT_queue_family_foreign`, `VK_KHR_dynamic_rendering`; Valve's `fdm_injection` and `rpo` Vulkan layers | `ro.hardware.vulkan=freedreno`: the same Mesa 26.3.0-devel Turnip built for Android (`vulkan.pastel.so` is also present, not selected). `/dev/kgsl-3d0` is the DRM render node |
 | OpenXR runtime | SteamVR, `bin/linuxarm64/vrclient.so` (`~/.config/openxr/1/active_runtime.json`); SteamOS ships the SDK headers, `libopenxr_loader.a` and `openxr.pc` | `/vendor/etc/openxr/1/active_runtime.json`, from the host's `/usr/share/guestos/android/vendor/etc/openxr`; no runtime broker package |
 | Implicit OpenXR layers | `XrApiLayer_VALVE_fdm_injection` (also listed as explicit) | `XrApiLayer_VALVE_fdm_injection` |
 
@@ -169,8 +169,12 @@ What follows from them:
 - **Driver workarounds.** Lepton is a Waydroid container, and its Vulkan driver is Turnip. The
   Adreno workarounds in `docs/quest-port.md` were found on Qualcomm's own driver. The vertex padding
   stays on (it is correct either way); `debug.wiicompiled.vtxpad 0` can check whether Turnip needs it.
-- **Open:** whether Turnip in Lepton imports AHardwareBuffers and sync fds is in the `vkjson`
-  extension list, still to read.
+- **Foveation.** The host's Turnip has density maps for non-subsampled images through dynamic
+  rendering, what the Dawn patch needs, and both density map offset extensions, which would let
+  eye-tracked foveation shift one map instead of switching maps.
+- **Open:** whether Lepton's Android build of Turnip also imports AHardwareBuffers. `cmd gpu
+  vkjson` from the shell lists only instance extensions there (its device entry comes back empty),
+  and Mesa's binaries carry every extension name, so it takes an app inside Lepton to tell.
 - **Finding the runtime.** An app inside Lepton reaches SteamVR's OpenXR runtime through the system
   runtime file, not a broker. The Khronos loader the game links statically (`DYNAMIC_LOADER OFF`)
   tries the runtime brokers first, then reads `/{product,odm,oem,vendor,system}/etc/openxr/1/active_runtime.json`,
