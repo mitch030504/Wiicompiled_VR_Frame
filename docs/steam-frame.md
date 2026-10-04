@@ -184,8 +184,53 @@ What follows from them:
   Android OpenXR app. By its name it adds fragment density maps to apps' own render passes. This
   game draws its eyes on Dawn's device and only copies them into the swapchain on the OpenXR
   device, so the layer has no render pass of the game's to change; the game's own maps
-  (eye-tracked foveation, above) do that. If the layer gets in the way, its JSON names the
-  environment variable that disables it.
+  (eye-tracked foveation, above) do that. If the layer gets in the way,
+  `DISABLE_VULKAN_FDM_INJECTION_LAYER` turns it off (its manifest loads
+  `libVkLayer_VALVE_fdm_injection.so`; the runtime itself is
+  `/data/steamvr/runtime/bin/androidarm64/vrclient.so`).
+
+### SteamVR's Android OpenXR extensions
+
+Walkabout Mini Golf, a Unity game in the same Lepton, logs what the runtime offers (`adb logcat -d |
+grep -F '[XR]'`). Its extensions:
+
+```
+XR_EXT_active_action_set_priority XR_EXT_debug_utils XR_EXT_dpad_binding XR_EXT_eye_gaze_interaction
+XR_EXT_frame_composition_report XR_EXT_frame_synthesis XR_EXT_hand_interaction XR_EXT_hand_joints_motion_range
+XR_EXT_hand_tracking XR_EXT_hand_tracking_data_source XR_EXT_hp_mixed_reality_controller
+XR_EXT_interaction_profile_battery_state_display XR_EXT_interaction_render_model XR_EXT_local_floor
+XR_EXT_palm_pose XR_EXT_performance_settings XR_EXT_render_model XR_EXT_user_presence XR_EXT_uuid
+XR_EXT_view_configuration_views_change XR_FB_display_refresh_rate XR_FB_foveation
+XR_FB_foveation_configuration XR_FB_foveation_vulkan XR_FB_space_warp XR_FB_swapchain_update_state
+XR_HTC_vive_cosmos_controller_interaction XR_HTC_vive_focus3_controller_interaction
+XR_HTC_vive_wrist_tracker_interaction XR_HTCX_vive_tracker_interaction XR_KHR_android_create_instance
+XR_KHR_binding_modification XR_KHR_composition_layer_depth XR_KHR_generic_controller XR_KHR_locate_spaces
+XR_KHR_opengl_enable XR_KHR_opengl_es_enable XR_KHR_visibility_mask XR_KHR_vulkan_enable
+XR_KHR_vulkan_enable2 XR_META_foveation_eye_tracked XR_META_performance_metrics
+XR_META_recommended_layer_resolution XR_META_vulkan_swapchain_create_info XR_MND_headless
+XR_MNDX_egl_enable XR_VALVE_analog_threshold XR_VALVE_app_space_delta_pose
+XR_VALVE_frame_controller_interaction XR_VALVE_timing_utils
+```
+
+Environment blend modes `OPAQUE` and `ALPHA_BLEND`; reference spaces `LOCAL`, `STAGE` and `VIEW`.
+What this build asks for and gets:
+
+| Extension | Offered | What it means here |
+| --- | --- | --- |
+| `XR_KHR_android_create_instance`, `XR_KHR_vulkan_enable2` | yes | The Android backend's instance and Vulkan binding |
+| `XR_VALVE_frame_controller_interaction` | yes | The Frame controller profile and its D-pad |
+| `XR_FB_display_refresh_rate` | yes | `[vr] refresh_rate` (120 Hz) can be requested |
+| `XR_EXT_eye_gaze_interaction` | yes | Eye-tracked foveation |
+| `XR_EXT_performance_settings` | yes | `performance_level` |
+| `XR_EXT_hand_tracking`, `XR_EXT_hand_tracking_data_source` | yes | Tracked hands; `XR_FB_hand_tracking_mesh` and `_aim` are not offered, so the cockpit draws its procedural gloves and bare hands get no pinch gestures |
+| `XR_KHR_convert_timespec_time` | **no** | VR frame interpolation is unavailable, and controller motion is sampled at the frame's display time rather than the current time |
+| `XR_KHR_android_thread_settings` | no | Thread hints are skipped (logged as refused) |
+| `XR_FB_passthrough` | no | As expected; the build does not ask for it |
+
+Later candidates the runtime offers: `ALPHA_BLEND` could bring back the room around the menu screen
+without `XR_FB_passthrough`, `XR_KHR_visibility_mask` would skip the pixels the lenses never show,
+and `XR_FB_foveation` with `XR_META_foveation_eye_tracked` only shapes render passes into the
+runtime's swapchain images, which this game's eyes reach by copy, so it does not apply.
 
 ## Device checklist
 
