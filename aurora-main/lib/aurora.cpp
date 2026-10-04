@@ -615,8 +615,9 @@ struct EyeDensityMap {
   uint64_t map = 0;
   uint64_t lastUse = 0;
 };
-// The gaze cells' maps an eye keeps: a few glances' worth, each 2 bytes per 32x32 pixels.
-constexpr size_t kEyeDensityMapCacheSize = 32;
+// The gaze cells' maps an eye keeps, each 2 bytes per 32x32 pixels in a memory block of its own:
+// most of the cells a session's glances reach, so a glance rarely waits for a map to upload.
+constexpr size_t kEyeDensityMapCacheSize = 128;
 
 struct StereoEyeTarget {
   webgpu::TextureWithSampler color;

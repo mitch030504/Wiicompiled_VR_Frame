@@ -243,13 +243,17 @@ region to where the player looks:
 2. `vr/eye_gaze.h` turns the gaze into tangents of each eye's own view, which may be canted.
    `AuroraStereoFrame` carries them as `gaze` and `gazeValid`, appended after its existing fields.
 3. Aurora snaps the gaze to a cell of two map texels (64 pixels, about 3 degrees) and builds that
-   cell's density map with the level's rings centred on the gaze (`gfx/foveation.hpp`).
+   cell's density map with the level's rings centred on the gaze (`gfx/foveation.hpp`). Both rings
+   are 8 degrees wider than the fixed map's: the full-density region has to cover where a saccade
+   lands until the next game frame's map is bound, the tracker's error, and Turnip shading a whole
+   render-pass bin at one density.
 
-Each eye keeps up to 32 maps, one per cell looked at, so a glance back reuses its map instead of
-uploading a new one. A new map is bound once its upload has completed, and until then the eye keeps
+Each eye keeps up to 128 maps, one per cell looked at, so a glance back reuses its map instead of
+uploading a new one. Each map has a memory block of its own: Turnip reads a map through a host
+mapping of its memory, and Dawn's buffer uploads unmap the shared blocks they sub-allocate from. A new map is bound once its upload has completed, and until then the eye keeps
 the map it had. A blink, lost tracking or the setting turned off returns to the map centred on the
-forward direction, which is byte-identical to the fixed foveation map. No change to the Dawn patch
-was needed: maps stay immutable, and the patch already lets a view be rebound to another map.
+forward direction, which is byte-identical to the fixed foveation map. Maps stay immutable, and the
+Dawn patch lets a view be rebound to another map.
 
 The session log reports `OpenXR eye gaze: available` (or that the runtime has no eye tracker),
 `OpenXR eye gaze: tracking` at the first tracked sample, and `eye foveation medium following the

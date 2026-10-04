@@ -1088,8 +1088,9 @@ did (39 to 41.5 FPS).
 With `eye_tracked_foveation`, a runtime that offers `XR_EXT_eye_gaze_interaction` and reports an eye
 tracker (the Steam Frame's SteamVR) has its gaze pose located for each packet's display time and
 turned into tangents of each eye's view (`vr/eye_gaze.h`), which `AuroraStereoFrame` carries as
-`gaze`/`gazeValid`. Aurora centres the level's rings on the gaze snapped to a cell of two map texels
-(about 3 degrees), keeping up to 32 maps per eye, one per cell looked at, and binds a new one once
+`gaze`/`gazeValid`. Aurora centres the level's rings, each widened by 8 degrees to cover the lag
+and error of tracking, on the gaze snapped to a cell of two map texels (about 3 degrees), keeping up
+to 128 maps per eye, one per cell looked at, and binds a new one once
 its upload completes, the previous map staying bound meanwhile. Without a tracked gaze (a blink, no
 tracker, the setting off) the map is the forward one above, unchanged. Details and the Steam Frame
 checks are in `docs/steam-frame.md`.
