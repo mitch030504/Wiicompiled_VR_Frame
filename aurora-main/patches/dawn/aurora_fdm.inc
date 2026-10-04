@@ -93,8 +93,12 @@ MaybeError AuroraFdmUpload(Device* device, uint32_t width, uint32_t height, cons
 
     VkMemoryRequirements requirements;
     device->fn.GetImageMemoryRequirements(device->GetVkDevice(), map.image, &requirements);
-    DAWN_TRY_ASSIGN(map.memory,
-                    device->GetResourceMemoryAllocator()->Allocate(requirements, MemoryKind::DeviceLocal));
+    // A memory block of its own. Turnip reads a map through a host mapping of its memory, taken
+    // when the image is bound, and Dawn's buffer uploads map and unmap the shared blocks they
+    // sub-allocate from (Buffer::MapMemoryAndPerformOperation). An unmap there pulled the mapping
+    // from under a map sharing the block, and the next render pass read freed memory.
+    DAWN_TRY_ASSIGN(map.memory, device->GetResourceMemoryAllocator()->Allocate(
+                                    requirements, MemoryKind::DeviceLocal, /*forceDisableSubAllocation=*/true));
     DAWN_TRY(CheckVkSuccess(device->fn.BindImageMemory(device->GetVkDevice(), map.image,
                                                        ToBackend(map.memory.GetResourceHeap())->GetMemory(),
                                                        map.memory.GetOffset()),
