@@ -159,6 +159,7 @@ build; its launch and manifest are Lepton's.
 | `[vr] refresh_rate` default | `0` (the headset's own) | `120` |
 | `[vr] passthrough` | default on (`XR_FB_passthrough`) | not asked for, default off, setting hidden |
 | `[vr] eye_tracked_foveation` default | off | on |
+| `[vr] repeat_frames` default | off | on |
 
 The application ID stays `org.wiicompiled.quest`, so the storage paths in `docs/quest-port.md` hold
 as they are. The kit's CPU string differs from the Quest ones, which gives the Frame its own kit
@@ -223,9 +224,17 @@ so nothing changes on a Quest.
 The request uses the runtime's own value within half a hertz of the setting (runtimes report 119.98
 for 120). Setting it back to `0` restores the rate the session started at. The game renders 60 frames
 a second, so at 120 Hz each frame shows for exactly two refreshes. At 72 or 90 Hz some frames show
-for one refresh and others for two, which judders. The Frame starts at 120. Render-first pacing
-(`docs/quest-port.md`) already waits for each sealed game frame, so on the Frame the pacing summary
-should read about 60 `skipped-slots` a second with no `late` cycles.
+for one refresh and others for two, which judders. The Frame starts at 120.
+
+Render-first pacing (`docs/quest-port.md`) submits a frame once the game has sealed one, 60 times a
+second. On the Frame, SteamVR answered that by running the app at half rate (the pacing summary read
+`predicted-rate=60.0Hz`) and filling every other refresh itself, even with Motion Smoothing off, which
+doubled the HUD and the menu screen while the head turned. `[vr] repeat_frames` (default on for the
+Frame, off elsewhere, live in the headset panel's VR tab) therefore submits the retained layer, with
+the poses it was rendered for, on every refresh the next eyes are not ready for: the pacing thread
+waits a millisecond for them and otherwise spends the refresh on a keep-alive cycle, which
+xrWaitFrame paces. The summary should then read `predicted-rate=120.0Hz`, about 60 `keepalive` a
+second and 60 `new` layers.
 
 Lepton may decline the request (frame-control found SteamVR keeping its own rate there). The session
 log then says `display refresh rate 120 Hz refused` with the rates it offers, and nothing else

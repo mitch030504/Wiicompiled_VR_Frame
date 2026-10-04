@@ -710,6 +710,9 @@ private:
     // Skipped eye copies tolerated back to back before the session is given up: a few seconds
     // at the headset's refresh rate.
     static constexpr uint32_t kMaxConsecutiveSkips = 300;
+    // With [vr] repeat_frames, how long render-first pacing waits for the eyes before it spends the
+    // next display refresh on the retained layer. The repeat's xrWaitFrame does the actual pacing.
+    static constexpr uint32_t kRepeatFramePollMs = 1;
 
     static float ClampRenderScale(float scale) noexcept {
         return std::clamp(scale, RuntimeConfigFile::kVrRenderScaleMin, RuntimeConfigFile::kVrRenderScaleMax);
@@ -1335,13 +1338,17 @@ private:
         aurora_notify_stereo_frame();
 
         // Aurora renders the eyes at its next seal. Meanwhile the compositor keeps showing the
-        // retained layer; a 50 ms stall repeats it explicitly and withdraws the packet.
+        // retained layer; a 50 ms stall repeats it explicitly and withdraws the packet. With
+        // [vr] repeat_frames the retained layer is also submitted for every display refresh the
+        // eyes are not ready for, each cycle paced by xrWaitFrame, so the runtime sees the app at
+        // the display's rate rather than the game's and never fills refreshes in itself.
+        const uint32_t wait_ms = RuntimeConfigFile::VrRepeatFrames() ? kRepeatFramePollMs : 50;
         OpenXRSubmissionStatus submission = OpenXRSubmissionStatus::Timeout;
         bool canceled_before_encode = false;
         const auto cancel_after = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
         while (!stop_.load(std::memory_order_acquire) && submission == OpenXRSubmissionStatus::Timeout) {
             submission = diagnostics::Measure(diagnostics::Stage::SubmissionWait, [&] {
-                return backend_->WaitForSubmission(packet, 50);
+                return backend_->WaitForSubmission(packet, wait_ms);
             });
             if (submission == OpenXRSubmissionStatus::Timeout) {
                 if (std::chrono::steady_clock::now() >= cancel_after) {
