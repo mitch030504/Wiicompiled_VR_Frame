@@ -1,5 +1,12 @@
 #pragma once
 
+// The standalone headsets: the Quest (Android) and the Steam Frame, in its Android flavour and its
+// native SteamOS build. They render on a mobile GPU with a game thread that is the bottleneck, so
+// they share the defaults below and the headset panel's foveation and tracked-hands rows.
+#if defined(__ANDROID__) || defined(MKW_HEADSET_STEAM_FRAME)
+#define MKW_VR_STANDALONE 1
+#endif
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -63,6 +70,7 @@ struct RuntimeUserConfig {
     std::optional<std::string> vrMirrorView;
     std::optional<std::string> vrControllerMode;
     std::optional<uint32_t> vrFrameInterpolationFps;
+    std::optional<uint32_t> vrRefreshRate;
     std::optional<bool> vrFirstPerson;
     std::optional<bool> vrFirstPersonToggleClick;
     std::optional<float> vrFirstPersonUnitsPerMeter;
@@ -91,6 +99,7 @@ struct RuntimeUserConfig {
     std::optional<bool> vrWheelHaptics;
     std::optional<std::string> vrPerformanceLevel;
     std::optional<std::string> vrFoveation;
+    std::optional<bool> vrEyeTrackedFoveation;
     std::optional<std::string> vrRecenterKey;
     std::optional<float> vrLeanBackDegrees;
     // F10 > Diagnostics: OpenXR pacing and presentation logging in console.log.
@@ -188,9 +197,10 @@ inline constexpr uint32_t kPostProcessingBloomPath = 0x10u;
 inline constexpr uint32_t kDisabledPostProcessingPathsDefault = kPostProcessingBloomPath;
 
 // Headset eye size as a fraction of what the OpenXR runtime recommends. A
-// standalone headset renders on a mobile GPU, so the Quest starts below it;
-// the launcher's first Config.toml (GameStorage.kt) writes the same value.
-#if defined(__ANDROID__)
+// standalone headset renders on a mobile GPU, so the Quest and the Steam Frame
+// start below it; the launcher's first Config.toml (GameStorage.kt) writes the
+// same value.
+#if defined(MKW_VR_STANDALONE)
 inline constexpr float kVrRenderScaleDefault = 0.8f;
 #define MKW_VR_RENDER_SCALE_DEFAULT_TEXT "0.8"
 #else
@@ -253,7 +263,7 @@ inline constexpr bool kVrCockpitItemThrowDefault = true;
 // draws them by default; the Quest keeps the game's culling, since every
 // extra model costs its GPU twice. The macro is the same default for the
 // config file written on first launch.
-#if defined(__ANDROID__)
+#if defined(MKW_VR_STANDALONE)
 inline constexpr bool kVrObjectCullingDefault = true;
 #define MKW_VR_OBJECT_CULLING_DEFAULT_TOML "true"
 #else
@@ -281,13 +291,33 @@ inline bool IsSupportedVrPerformanceLevel(std::string_view value) {
     return value == "default" || value == "power_savings" || value == "sustained_low" ||
            value == "sustained_high" || value == "boost";
 }
+// The display refresh rate asked of the OpenXR runtime (XR_FB_display_refresh_rate), in Hz, each
+// time the session starts and whenever the setting changes; 0 leaves the headset's own rate. The
+// game renders 60 frames a second, so at 120 Hz every frame shows for exactly two refreshes, where
+// 72 or 90 Hz hold some frames longer than others. The Steam Frame starts at 120; elsewhere the
+// headset's own setting stays in charge. A runtime without the extension, or one that declines the
+// rate, keeps its own.
+#if defined(MKW_HEADSET_STEAM_FRAME)
+inline constexpr uint32_t kVrRefreshRateDefault = 120;
+#define MKW_VR_REFRESH_RATE_DEFAULT_TEXT "120"
+#else
+inline constexpr uint32_t kVrRefreshRateDefault = 0;
+#define MKW_VR_REFRESH_RATE_DEFAULT_TEXT "0"
+#endif
+inline constexpr uint32_t kVrRefreshRateMin = 60;
+inline constexpr uint32_t kVrRefreshRateMax = 240;
+
+inline bool IsSupportedVrRefreshRate(uint32_t value) {
+    return value == 0 || (value >= kVrRefreshRateMin && value <= kVrRefreshRateMax);
+}
 // Fixed foveated rendering of the immersive eyes on the Quest, in the order of
 // aurora_set_stereo_foveation's levels: the periphery is shaded in 2x2, then
 // 4x4 pixel blocks, the higher the level the closer to the centre. Whether the
 // GPU device gets fragment density maps at all is decided at launch, so going
 // from "off" to a level takes a restart; between levels and back to "off" it is
-// live. The Quest starts at "medium"; elsewhere it does nothing.
-#if defined(__ANDROID__)
+// live. The standalone headsets (Quest, Steam Frame) start at "medium";
+// elsewhere it does nothing.
+#if defined(MKW_VR_STANDALONE)
 inline constexpr const char* kVrFoveationDefault = "medium";
 #else
 inline constexpr const char* kVrFoveationDefault = "off";
@@ -297,6 +327,16 @@ inline constexpr std::array<std::string_view, 4> kVrFoveationLevels{"off", "low"
 inline bool IsSupportedVrFoveation(std::string_view value) {
     return std::find(kVrFoveationLevels.begin(), kVrFoveationLevels.end(), value) != kVrFoveationLevels.end();
 }
+
+// Eye-tracked foveation: with a headset that tracks the eyes (XR_EXT_eye_gaze_interaction, the Steam
+// Frame's), the foveation level's full-density region follows the gaze instead of staying on each
+// eye's forward direction. Live while the session's runtime offered the gaze at launch. On by
+// default on the Steam Frame; elsewhere off, since Horizon OS asks for an eye tracking permission.
+#if defined(MKW_HEADSET_STEAM_FRAME)
+inline constexpr bool kVrEyeTrackedFoveationDefault = true;
+#else
+inline constexpr bool kVrEyeTrackedFoveationDefault = false;
+#endif
 
 // The level aurora_set_stereo_foveation takes; anything unknown is off.
 inline uint32_t VrFoveationLevelIndex(std::string_view value) {
@@ -545,6 +585,11 @@ inline void EnsureConfigFile() {
               "controller_mode = \"wii_remote\"\n"
               "# VR interpolation: 0 = Off, 1 = Auto, or 72/90/120 FPS. Live.\n"
               "frame_interpolation_fps = 0\n"
+              "# Display refresh rate asked of the headset, in Hz (72, 90, 120,\n"
+              "# 144, ...), or 0 to leave the headset's own setting. The game runs\n"
+              "# at 60, so 120 shows every frame twice. Only runtimes that let apps\n"
+              "# choose (XR_FB_display_refresh_rate) take it. Live.\n"
+              "refresh_rate = " MKW_VR_REFRESH_RATE_DEFAULT_TEXT "\n"
               "render_scale = " MKW_VR_RENDER_SCALE_DEFAULT_TEXT "\n"
               "world_units_per_meter = 500.0\n"
               "hud_distance_meters = 2.0\n"
@@ -864,6 +909,7 @@ inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
         value && IsSupportedVrFoveation(*value)) {
         config.vrFoveation = *value;
     }
+    config.vrEyeTrackedFoveation = FindConfigValue<bool>(document, "vr", "eye_tracked_foveation");
     if (auto value = FindConfigValue<std::string>(document, "vr", "mirror_view");
         value && IsSupportedVrMirrorView(*value)) {
         config.vrMirrorView = *value;
@@ -871,6 +917,9 @@ inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
     if (auto value = FindConfigValue<std::string>(document, "vr", "controller_mode");
         value && IsSupportedVrControllerMode(*value)) {
         config.vrControllerMode = *value;
+    }
+    if (auto value = FindConfigUint(document, "vr", "refresh_rate"); value && IsSupportedVrRefreshRate(*value)) {
+        config.vrRefreshRate = *value;
     }
     config.vrFrameInterpolationFps = FindConfigValue<uint32_t>(document, "vr", "frame_interpolation_fps");
     if (!config.vrFrameInterpolationFps) {
@@ -1241,6 +1290,14 @@ inline bool SetVrFrameInterpolationFps(uint32_t value) {
     return WriteSetting("vr", "frame_interpolation_fps", std::to_string(value));
 }
 
+inline bool SetVrRefreshRate(uint32_t value) {
+    if (!IsSupportedVrRefreshRate(value)) {
+        return false;
+    }
+    Mutable().vrRefreshRate = value;
+    return WriteSetting("vr", "refresh_rate", std::to_string(value));
+}
+
 inline bool SetVrFirstPersonRotation(std::string value) {
     if (!IsSupportedVrFirstPersonRotation(value)) {
         return false;
@@ -1263,6 +1320,11 @@ inline bool SetVrFoveation(std::string value) {
     }
     Mutable().vrFoveation = value;
     return WriteSetting("vr", "foveation", FormatString(value));
+}
+
+inline bool SetVrEyeTrackedFoveation(bool value) {
+    Mutable().vrEyeTrackedFoveation = value;
+    return WriteSetting("vr", "eye_tracked_foveation", value ? "true" : "false");
 }
 
 inline bool SetVrFirstPersonSeat(std::string value) {
@@ -1591,9 +1653,10 @@ inline bool ShowFps(bool fallback = false) {
 }
 
 // Runs the host side of the GX pipeline on its own thread (gx_thread.h). On by
-// default on the Quest, where the game thread is the bottleneck; opt-in elsewhere.
+// default on the standalone headsets, where the game thread is the bottleneck;
+// opt-in elsewhere.
 inline bool GxThread() {
-#if defined(__ANDROID__)
+#if defined(MKW_VR_STANDALONE)
     return Get().gxThread.value_or(true);
 #else
     return Get().gxThread.value_or(false);
@@ -1683,9 +1746,16 @@ inline bool SetVrRaceView(VrRaceView view) {
 
 // The room, through the headset's cameras, around the menu screen and every
 // other virtual screen, a Flat Screen race included, and around the immersive
-// window (never a fully immersive race). Only the Quest offers it; the
-// launcher's Settings page shows the same default.
-inline bool VrPassthrough(bool fallback = true) {
+// window (never a fully immersive race). Only the Quest offers it
+// (XR_FB_passthrough, which SteamVR does not have); the launcher's Settings
+// page shows the same default.
+#if defined(MKW_HEADSET_STEAM_FRAME)
+inline constexpr bool kVrPassthroughDefault = false;
+#else
+inline constexpr bool kVrPassthroughDefault = true;
+#endif
+
+inline bool VrPassthrough(bool fallback = kVrPassthroughDefault) {
     return Get().vrPassthrough.value_or(fallback);
 }
 
@@ -1743,6 +1813,11 @@ inline uint32_t VrFrameInterpolationFps() {
     return mkw::vr::NormalizeFrameInterpolationFps(Get().vrFrameInterpolationFps.value_or(0));
 }
 
+inline uint32_t VrRefreshRate(uint32_t fallback = kVrRefreshRateDefault) {
+    const uint32_t value = Get().vrRefreshRate.value_or(fallback);
+    return IsSupportedVrRefreshRate(value) ? value : 0;
+}
+
 inline bool DiagnosticsOpenXRLogging(bool fallback = false) {
     return Get().diagnosticsOpenXRLogging.value_or(fallback);
 }
@@ -1776,6 +1851,10 @@ inline std::string VrPerformanceLevel(std::string fallback = kVrPerformanceLevel
 inline std::string VrFoveation(std::string fallback = kVrFoveationDefault) {
     const auto& value = Get().vrFoveation;
     return value && IsSupportedVrFoveation(*value) ? *value : std::move(fallback);
+}
+
+inline bool VrEyeTrackedFoveation(bool fallback = kVrEyeTrackedFoveationDefault) {
+    return Get().vrEyeTrackedFoveation.value_or(fallback);
 }
 
 inline int32_t VrFirstPersonHiddenModel(int32_t fallback = kVrFirstPersonHiddenModelDefault) {

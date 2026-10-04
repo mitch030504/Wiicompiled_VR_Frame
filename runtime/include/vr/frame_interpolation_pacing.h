@@ -9,6 +9,21 @@ inline uint32_t NormalizeFrameInterpolationFps(uint32_t value) noexcept {
     return value == 1 || value == 72 || value == 90 || value == 120 ? value : 0;
 }
 
+// The display refresh rate to ask the runtime for ([vr] refresh_rate): the one it lists within half
+// a hertz of `requested` (runtimes report 119.9 or 120.00001 for 120), or 0 when none is close.
+inline float MatchDisplayRefreshRate(const float* rates, uint32_t count, float requested) noexcept {
+    float best = 0.0f;
+    float best_distance = 0.5f;
+    for (uint32_t i = 0; i < count; ++i) {
+        const float distance = rates[i] > requested ? rates[i] - requested : requested - rates[i];
+        if (rates[i] > 0.0f && distance <= best_distance) {
+            best = rates[i];
+            best_distance = distance;
+        }
+    }
+    return best;
+}
+
 // A render-rate ceiling on the compositor's own display-time grid. Auto (1)
 // renders every tick. Fixed targets cannot increase the physical refresh rate.
 class FrameInterpolationPacing {

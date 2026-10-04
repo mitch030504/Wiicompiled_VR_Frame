@@ -6,7 +6,7 @@
 # SDK's NDK and ninja:
 #
 #   powershell -ExecutionPolicy Bypass -File android/Build-QuestGame.ps1 [-Generated <dir>] [-Kit <dir>]
-#                                    [-Headset modern|quest1] [-Configuration debug|release]
+#                                    [-Headset modern|quest1|frame] [-Configuration debug|release]
 #                                    [-Data <extracted disc dir>] [-Output <file.wcgame>] [-Install]
 #
 # WiiCompiled Setup's --build-quest runs the copy staged in an installation's BuildWorkspace\android,
@@ -33,7 +33,7 @@ param(
     [string]$Sysroot = '',
     [string]$Ninja = '',
     [string]$BuiltBy = 'android/Build-QuestGame.ps1',
-    [ValidateSet('modern', 'quest1')] [string]$Headset = 'modern',
+    [ValidateSet('modern', 'quest1', 'frame')] [string]$Headset = 'modern',
     [ValidateSet('debug', 'release')] [string]$Configuration = 'debug',
     [ValidateSet('base', 'retro_rewind')] [string]$Product = 'base',
     [string]$Mod = '',
@@ -47,7 +47,7 @@ $root = $PSScriptRoot
 $workspace = (Resolve-Path (Join-Path $root '..')).Path
 if (-not $Generated) { $Generated = Join-Path $workspace '.scratch\vr-build-workspace\BuildWorkspace\generated' }
 if (-not $Manifest) { $Manifest = Join-Path $workspace 'projects\mkwii\recomp.yml' }
-$variant = if ($Headset -eq 'quest1') { 'quest1' } else { 'modernQuest' }
+$variant = switch ($Headset) { 'quest1' { 'quest1' } 'frame' { 'steamFrame' } default { 'modernQuest' } }
 $variant += (Get-Culture).TextInfo.ToTitleCase($Configuration)
 if (-not $BuildDir) { $BuildDir = Join-Path $root "app\build\questGame\$variant\$Product" }
 if (-not $Kit) {

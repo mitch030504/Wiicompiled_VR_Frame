@@ -39,7 +39,7 @@ int main() {
     Require(!Parse("[vr]\nfoveation = \"ultra\"\n").vrFoveation.has_value());
     Require(!Parse("[vr]\nfoveation = 2\n").vrFoveation.has_value());
     Require(!Parse("[vr]\n").vrFoveation.has_value());
-#if defined(__ANDROID__)
+#if defined(MKW_VR_STANDALONE)
     Require(std::string_view(RuntimeConfigFile::kVrFoveationDefault) == "medium");
 #else
     Require(std::string_view(RuntimeConfigFile::kVrFoveationDefault) == "off");
@@ -49,6 +49,44 @@ int main() {
     Require(RuntimeConfigFile::VrFoveationLevelIndex("medium") == 2);
     Require(RuntimeConfigFile::VrFoveationLevelIndex("high") == 3);
     Require(RuntimeConfigFile::VrFoveationLevelIndex("ultra") == 0);
+
+    // [vr] refresh_rate: Hz asked of the runtime, 0 leaving its own. The Steam Frame
+    // starts at 120, twice the game's 60.
+    Require(Parse("[vr]\nrefresh_rate = 120\n").vrRefreshRate == 120u);
+    Require(Parse("[vr]\nrefresh_rate = 0\n").vrRefreshRate == 0u);
+    Require(Parse("[vr]\nrefresh_rate = 144\n").vrRefreshRate == 144u);
+    Require(!Parse("[vr]\nrefresh_rate = 30\n").vrRefreshRate.has_value());
+    Require(!Parse("[vr]\nrefresh_rate = 500\n").vrRefreshRate.has_value());
+    Require(!Parse("[vr]\nrefresh_rate = -1\n").vrRefreshRate.has_value());
+    Require(!Parse("[vr]\nrefresh_rate = \"120\"\n").vrRefreshRate.has_value());
+    Require(!Parse("[vr]\n").vrRefreshRate.has_value());
+#if defined(MKW_HEADSET_STEAM_FRAME)
+    Require(RuntimeConfigFile::kVrRefreshRateDefault == 120u);
+    Require(std::string_view(MKW_VR_REFRESH_RATE_DEFAULT_TEXT) == "120");
+#else
+    Require(RuntimeConfigFile::kVrRefreshRateDefault == 0u);
+    Require(std::string_view(MKW_VR_REFRESH_RATE_DEFAULT_TEXT) == "0");
+#endif
+
+    // [vr] eye_tracked_foveation: the foveation centre follows the gaze, on the Steam Frame by default.
+    Require(Parse("[vr]\neye_tracked_foveation = true\n").vrEyeTrackedFoveation == true);
+    Require(Parse("[vr]\neye_tracked_foveation = false\n").vrEyeTrackedFoveation == false);
+    Require(!Parse("[vr]\neye_tracked_foveation = 1\n").vrEyeTrackedFoveation.has_value());
+    Require(!Parse("[vr]\n").vrEyeTrackedFoveation.has_value());
+#if defined(MKW_HEADSET_STEAM_FRAME)
+    Require(RuntimeConfigFile::kVrEyeTrackedFoveationDefault);
+#else
+    Require(!RuntimeConfigFile::kVrEyeTrackedFoveationDefault);
+#endif
+
+    // [vr] passthrough: Horizon OS's room view, which the Steam Frame build does not offer.
+    Require(Parse("[vr]\npassthrough = false\n").vrPassthrough == false);
+    Require(!Parse("[vr]\n").vrPassthrough.has_value());
+#if defined(MKW_HEADSET_STEAM_FRAME)
+    Require(!RuntimeConfigFile::kVrPassthroughDefault);
+#else
+    Require(RuntimeConfigFile::kVrPassthroughDefault);
+#endif
 
     // [vr] hand_tracking: the cockpit hands follow the headset's hand tracking.
     Require(Parse("[vr]\nhand_tracking = true\n").vrHandTracking == true);
@@ -63,7 +101,7 @@ int main() {
     Require(Parse("[vr]\nobject_culling = false\n").vrObjectCulling == false);
     Require(!Parse("[vr]\n").vrObjectCulling.has_value());
     Require(!Parse("[vr]\nobject_culling = 0\n").vrObjectCulling.has_value());
-#if defined(__ANDROID__)
+#if defined(MKW_VR_STANDALONE)
     Require(RuntimeConfigFile::kVrObjectCullingDefault);
     Require(std::string_view(MKW_VR_OBJECT_CULLING_DEFAULT_TOML) == "true");
 #else

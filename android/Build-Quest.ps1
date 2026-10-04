@@ -1,7 +1,10 @@
 # Builds the standalone Meta Quest APK on a Windows host.
 #
 #   powershell -ExecutionPolicy Bypass -File android/Build-Quest.ps1 [-Generated <dir>]
-#                                [-Headset modern|quest1] [-Configuration debug|release] [-Install]
+#                                [-Headset modern|quest1|frame] [-Configuration debug|release] [-Install]
+#
+# -Headset frame builds the Steam Frame flavour (steamFrame), which runs under Lepton, SteamOS's
+# Android layer, with SteamVR's OpenXR runtime (docs/quest-port.md, "Steam Frame").
 #
 # One app offers both games: the APK carries a kit for the base game, and for Retro Rewind too
 # when -Generated holds a translation that includes the mod.
@@ -25,7 +28,7 @@ param(
     [string]$Generated = '',
     [string]$Dependencies = '',
     [string]$CMakeDir = '',
-    [ValidateSet('modern', 'quest1')] [string]$Headset = 'modern',
+    [ValidateSet('modern', 'quest1', 'frame')] [string]$Headset = 'modern',
     [ValidateSet('debug', 'release')] [string]$Configuration = 'debug',
     [switch]$Install,
     [switch]$StockDawn
@@ -80,8 +83,13 @@ if (-not $Dependencies) {
 }
 
 $variant = (Get-Culture).TextInfo.ToTitleCase($Configuration)
-$flavour = if ($Headset -eq 'quest1') { 'Quest1' } else { 'ModernQuest' }
-$expectedCpu = if ($Headset -eq 'quest1') { 'kryo' } else { 'cortex-a77' }
+# The Gradle flavour and the -mcpu target its kit must record (headsetCpus in app/build.gradle.kts).
+$flavourDir, $expectedCpu = switch ($Headset) {
+    'quest1' { 'quest1', 'kryo' }
+    'frame' { 'steamFrame', 'cortex-x4' }
+    default { 'modernQuest', 'cortex-a77' }
+}
+$flavour = $flavourDir.Substring(0, 1).ToUpperInvariant() + $flavourDir.Substring(1)
 $task = "app:assemble$flavour$variant"
 $gradleArgs = @(
     '--project-dir', $root,
@@ -98,7 +106,6 @@ Write-Host "gradlew $($gradleArgs -join ' ')"
 & (Join-Path $root 'gradlew.bat') @gradleArgs
 if ($LASTEXITCODE -ne 0) { throw "Gradle failed ($LASTEXITCODE)" }
 
-$flavourDir = if ($Headset -eq 'quest1') { 'quest1' } else { 'modernQuest' }
 $apkDir = Join-Path $root "app\build\outputs\apk\$flavourDir\$Configuration"
 $apk = Get-ChildItem -Path $apkDir -Filter '*.apk' | Select-Object -First 1
 if (-not $apk) { throw "No APK under $apkDir" }
@@ -128,6 +135,8 @@ if ($Install) {
     if ($LASTEXITCODE -ne 0) { throw "adb install failed ($LASTEXITCODE)" }
     if ($Headset -eq 'quest1') {
         Write-Host 'Installed. Use WiiCompiled Settings for setup, then launch WiiCompiled VR directly from the library.'
+    } elseif ($Headset -eq 'frame') {
+        Write-Host 'Installed. Build a game on this PC with android/Build-QuestGame.ps1 -Headset frame -Install, then start WiiCompiled VR from the Steam library.'
     } else {
         Write-Host 'Installed. Build a game with Build on this Quest in the launcher, or on this PC with android/Build-QuestGame.ps1 -Install.'
     }

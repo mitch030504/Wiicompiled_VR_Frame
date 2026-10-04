@@ -5,10 +5,10 @@
 #include <cstdint>
 #include <vector>
 
-// Fixed foveated rendering for the immersive eyes: the fragment density map an eye's render pass
-// runs under (webgpu/fdm.hpp). Each texel says how finely the framebuffer area it covers is shaded:
+// Foveated rendering for the immersive eyes: the fragment density map an eye's render pass runs
+// under (webgpu/fdm.hpp). Each texel says how finely the framebuffer area it covers is shaded:
 // fully at the centre of the view, in 2x2 then 4x4 pixel blocks towards the edges, where the
-// headset's lenses blur the picture anyway.
+// headset's lenses blur the picture anyway. With eye tracking the centre is where the player looks.
 namespace aurora::gfx::foveation {
 
 enum class Level : uint32_t {
@@ -79,6 +79,65 @@ inline float eccentricity_degrees(float tanX, float tanY) noexcept {
   return std::atan(std::sqrt(tanX * tanX + tanY * tanY)) * (180.0f / 3.14159265358979f);
 }
 
+// Where the map's full density is centred, in tangents of the eye's view like EyeFov's (x right,
+// y up): the forward direction, or the point the player looks at.
+struct Gaze {
+  float tanX = 0.0f;
+  float tanY = 0.0f;
+};
+
+// The angle between the rays through tangents (x, y) and through the gaze.
+inline float angle_from_gaze_degrees(float tanX, float tanY, const Gaze& gaze) noexcept {
+  const float dot = tanX * gaze.tanX + tanY * gaze.tanY + 1.0f;
+  const float norms = std::sqrt((tanX * tanX + tanY * tanY + 1.0f) * (gaze.tanX * gaze.tanX + gaze.tanY * gaze.tanY + 1.0f));
+  return std::acos(std::clamp(dot / norms, -1.0f, 1.0f)) * (180.0f / 3.14159265358979f);
+}
+
+// Eye-tracked maps are built for the gaze snapped to cells of this many map texels square, so an
+// eye's map changes only when the gaze moves that far (about 3 degrees with 32-pixel texels), and a
+// few maps serve a whole session's glances.
+inline constexpr uint32_t kGazeCellTexels = 2;
+
+struct GazeCell {
+  int32_t x = 0;
+  int32_t y = 0;
+  bool operator==(const GazeCell&) const = default;
+};
+
+// The cell of an eye of `eyeWidth` by `eyeHeight` pixels the gaze falls in, counted from the top
+// left and clamped to the eye. A gaze that is not a number counts as the forward direction.
+inline GazeCell gaze_cell(uint32_t eyeWidth, uint32_t eyeHeight, uint32_t texel, const EyeFov& fov,
+                          Gaze gaze) noexcept {
+  const float cellPixels = static_cast<float>(std::max(texel, 1u) * kGazeCellTexels);
+  if (!std::isfinite(gaze.tanX) || !std::isfinite(gaze.tanY)) {
+    gaze = {};
+  }
+  const float spanX = fov.tanRight - fov.tanLeft;
+  const float spanY = fov.tanDown - fov.tanUp;
+  const float u = spanX != 0.0f ? (gaze.tanX - fov.tanLeft) / spanX : 0.5f;
+  const float v = spanY != 0.0f ? (gaze.tanY - fov.tanUp) / spanY : 0.5f;
+  const auto cell = [cellPixels](float fraction, uint32_t pixels) {
+    const int32_t count = std::max(1, static_cast<int32_t>(std::ceil(static_cast<float>(pixels) / cellPixels)));
+    const float position = std::clamp(fraction, 0.0f, 1.0f) * static_cast<float>(pixels) / cellPixels;
+    return std::clamp(static_cast<int32_t>(std::floor(position)), 0, count - 1);
+  };
+  return {cell(u, eyeWidth), cell(v, eyeHeight)};
+}
+
+// The gaze through the centre of a cell, clamped to the eye for an overhanging last row or column.
+inline Gaze cell_gaze(uint32_t eyeWidth, uint32_t eyeHeight, uint32_t texel, const EyeFov& fov,
+                      GazeCell cell) noexcept {
+  const float cellPixels = static_cast<float>(std::max(texel, 1u) * kGazeCellTexels);
+  const float u = eyeWidth > 0 ? std::min((static_cast<float>(cell.x) + 0.5f) * cellPixels, static_cast<float>(eyeWidth)) /
+                                     static_cast<float>(eyeWidth)
+                               : 0.5f;
+  const float v = eyeHeight > 0 ? std::min((static_cast<float>(cell.y) + 0.5f) * cellPixels, static_cast<float>(eyeHeight)) /
+                                      static_cast<float>(eyeHeight)
+                                : 0.5f;
+  return Gaze{.tanX = fov.tanLeft + (fov.tanRight - fov.tanLeft) * u,
+              .tanY = fov.tanUp + (fov.tanDown - fov.tanUp) * v};
+}
+
 inline uint8_t density(Level level, float eccentricity) noexcept {
   const Rings ring = rings(level);
   if (eccentricity < ring.full) {
@@ -95,15 +154,18 @@ struct Map {
 };
 
 // The map for an eye of `eyeWidth` by `eyeHeight` pixels whose field of view is `fov`, `texel` pixels
-// per map texel. The map covers the whole eye, its last row and column possibly overhanging it.
+// per map texel, centred on `gaze` (the forward direction by default). The map covers the whole eye,
+// its last row and column possibly overhanging it.
 inline void build(uint32_t eyeWidth, uint32_t eyeHeight, uint32_t texel, const EyeFov& fov, Level level,
-                  Map& map) {
+                  Map& map, const Gaze& gaze = {}) {
   map.width = texel > 0 ? (eyeWidth + texel - 1) / texel : 0;
   map.height = texel > 0 ? (eyeHeight + texel - 1) / texel : 0;
   map.rg8.assign(static_cast<size_t>(map.width) * map.height * 2, kFullDensity);
   if (level == Level::Off || eyeWidth == 0 || eyeHeight == 0) {
     return;
   }
+  // The forward direction keeps its own, exact formula, so the fixed maps do not change.
+  const bool forward = gaze.tanX == 0.0f && gaze.tanY == 0.0f;
   for (uint32_t y = 0; y < map.height; ++y) {
     // Texel centres, clamped to the eye for an overhanging last row or column.
     const float v = std::min((static_cast<float>(y) + 0.5f) * static_cast<float>(texel), static_cast<float>(eyeHeight)) /
@@ -113,7 +175,8 @@ inline void build(uint32_t eyeWidth, uint32_t eyeHeight, uint32_t texel, const E
       const float u = std::min((static_cast<float>(x) + 0.5f) * static_cast<float>(texel), static_cast<float>(eyeWidth)) /
                       static_cast<float>(eyeWidth);
       const float tanX = fov.tanLeft + (fov.tanRight - fov.tanLeft) * u;
-      const uint8_t value = density(level, eccentricity_degrees(tanX, tanY));
+      const uint8_t value =
+          density(level, forward ? eccentricity_degrees(tanX, tanY) : angle_from_gaze_degrees(tanX, tanY, gaze));
       uint8_t* texelBytes = &map.rg8[(static_cast<size_t>(y) * map.width + x) * 2];
       texelBytes[0] = value;
       texelBytes[1] = value;

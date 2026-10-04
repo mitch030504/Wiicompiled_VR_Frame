@@ -3,7 +3,7 @@
 # diagnostics for one session.
 #
 #   powershell -ExecutionPolicy Bypass -File android/Run-Quest.ps1 [-Apk <path>] [-Data <extracted disc dir>]
-#                         [-Headset modern|quest1] [-Configuration debug|release]
+#                         [-Headset modern|quest1|frame] [-Configuration debug|release]
 #                         [-Seconds 60] [-NoLaunch] [-SkipInstall]
 #
 # -Data names the extracted disc partition (the directory holding sys/, files/,
@@ -25,7 +25,7 @@
 param(
     [string]$Apk = '',
     [string]$Data = '',
-    [ValidateSet('modern', 'quest1')] [string]$Headset = 'modern',
+    [ValidateSet('modern', 'quest1', 'frame')] [string]$Headset = 'modern',
     [ValidateSet('debug', 'release')] [string]$Configuration = 'debug',
     [int]$Seconds = 60,
     [switch]$NoLaunch,
@@ -52,7 +52,7 @@ if (-not $devices) { throw 'No device in "device" state; check the Quest is conn
 
 if (-not $SkipInstall) {
     if (-not $Apk) {
-        $flavour = if ($Headset -eq 'quest1') { 'quest1' } else { 'modernQuest' }
+        $flavour = switch ($Headset) { 'quest1' { 'quest1' } 'frame' { 'steamFrame' } default { 'modernQuest' } }
         $apkDir = Join-Path $root "app\build\outputs\apk\$flavour\$Configuration"
         $Apk = Get-ChildItem -Path $apkDir -Filter '*.apk' -ErrorAction SilentlyContinue |
             Select-Object -First 1 | ForEach-Object FullName

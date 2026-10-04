@@ -53,6 +53,19 @@ val hasRetroRewindShards: Boolean = run {
     shards.isFile && shards.readText().contains("set(MKW_HAVE_RETRO_REWIND_SHARDS ON)")
 }
 
+// Each headset flavour's AArch64 -mcpu target. The game kit records it, and the kit export, the APK
+// audit (Build-Quest.ps1), the PC build (QuestGameKit.psm1), the on-headset build and the package
+// import all refuse a game built for another one.
+val headsetCpus = mapOf(
+    // Snapdragon XR2 and newer. Keep this as the default build target.
+    "modernQuest" to "cortex-a77",
+    // Snapdragon 835. cortex-a77 binaries terminate with SIGILL on Quest 1.
+    "quest1" to "kryo",
+    // Steam Frame: Snapdragon 8 Gen 3 (Cortex-X4, A720 and A520, all ARMv9.2). Its kernel exposes
+    // SVE and SVE2 (HWCAP, inside Lepton too), so the whole cortex-x4 feature set is safe.
+    "steamFrame" to "cortex-x4",
+)
+
 // android/nod-jni: nod, the disc image library the PC installer runs as nodtool,
 // cross-compiled with cargo for the launcher's "Select disc image". Needs a Rust
 // toolchain with the aarch64-linux-android target (see docs/quest-port.md).
@@ -152,11 +165,11 @@ android {
             dimension = "headset"
             manifestPlaceholders["mkwQuestSupportedDevices"] = "quest2|quest3|quest3s|questpro"
             buildConfigField("boolean", "QUEST1_DIRECT_LAUNCH", "false")
-            buildConfigField("String", "ANDROID_CPU", "\"cortex-a77\"")
+            buildConfigField("boolean", "STEAM_FRAME", "false")
+            buildConfigField("String", "ANDROID_CPU", "\"${headsetCpus.getValue("modernQuest")}\"")
             externalNativeBuild {
                 cmake {
-                    // Snapdragon XR2 and newer. Keep this as the default build target.
-                    arguments += "-DMKW_ANDROID_CPU=cortex-a77"
+                    arguments += "-DMKW_ANDROID_CPU=${headsetCpus.getValue("modernQuest")}"
                 }
             }
         }
@@ -164,11 +177,30 @@ android {
             dimension = "headset"
             manifestPlaceholders["mkwQuestSupportedDevices"] = "quest|quest2"
             buildConfigField("boolean", "QUEST1_DIRECT_LAUNCH", "true")
-            buildConfigField("String", "ANDROID_CPU", "\"kryo\"")
+            buildConfigField("boolean", "STEAM_FRAME", "false")
+            buildConfigField("String", "ANDROID_CPU", "\"${headsetCpus.getValue("quest1")}\"")
             externalNativeBuild {
                 cmake {
-                    // Snapdragon 835. cortex-a77 binaries terminate with SIGILL on Quest 1.
-                    arguments += "-DMKW_ANDROID_CPU=kryo"
+                    arguments += "-DMKW_ANDROID_CPU=${headsetCpus.getValue("quest1")}"
+                }
+            }
+        }
+        // Valve's Steam Frame, through Lepton (SteamOS's Android layer) and SteamVR's Android
+        // OpenXR runtime. Its manifest (src/steamFrame) drops the Horizon OS entries, and
+        // MKW_HEADSET gives the runtime the Frame's defaults (runtime_config.h).
+        create("steamFrame") {
+            dimension = "headset"
+            // Horizon OS only; src/steamFrame/AndroidManifest.xml removes the entry.
+            manifestPlaceholders["mkwQuestSupportedDevices"] = ""
+            buildConfigField("boolean", "QUEST1_DIRECT_LAUNCH", "false")
+            buildConfigField("boolean", "STEAM_FRAME", "true")
+            buildConfigField("String", "ANDROID_CPU", "\"${headsetCpus.getValue("steamFrame")}\"")
+            externalNativeBuild {
+                cmake {
+                    arguments += listOf(
+                        "-DMKW_ANDROID_CPU=${headsetCpus.getValue("steamFrame")}",
+                        "-DMKW_HEADSET=steam_frame",
+                    )
                 }
             }
         }
@@ -324,7 +356,7 @@ androidComponents {
             dependsOn("merge${capitalized}NativeLibs")
             appDir.set(layout.projectDirectory)
             script.set(rootProject.layout.projectDirectory.file("Export-QuestGameKit.ps1"))
-            androidCpu.set(if (variant.name.startsWith("quest1", ignoreCase = true)) "kryo" else "cortex-a77")
+            androidCpu.set(headsetCpus.getValue(checkNotNull(variant.flavorName) { "${variant.name} has no headset flavour" }))
             outputDir.set(layout.buildDirectory.dir("generated/assets/questGameKit/${variant.name}"))
             llvmStrip.set(sdkComponents.ndkDirectory.map {
                 it.file("toolchains/llvm/prebuilt/$host/bin/llvm-strip" + if (host.startsWith("windows")) ".exe" else "")

@@ -66,6 +66,10 @@ translator_bin_override=""
 fuse_ld_override=""
 native_prebuilt_dir=""
 sysroot=""
+openxr=0
+dawn_package_dir=""
+headset=""
+linux_cpu=""
 
 usage() {
     cat <<'EOF'
@@ -90,6 +94,14 @@ Usage: local-build.sh --output-dir DIR [options]
                                    skips compiling aurora-main from source entirely
   --sysroot PATH                   Passed to CMake as -DCMAKE_SYSROOT: where the compiler resolves
                                    standard headers/startup files
+  --openxr                        Build the OpenXR VR support (the same-device Vulkan backend); needs
+                                   --dawn-package, since the stock Dawn has no Vulkan hooks
+  --dawn-package DIR              A Dawn built with Aurora's patches (Launcher/build-dawn-linux.sh's
+                                   WORK_DIR/package); build it with the same --cc/--cxx
+  --headset NAME                  steam_frame: the Steam Frame's native SteamOS build and its defaults
+                                   (docs/steam-frame.md); empty for any other PC headset
+  --cpu NAME                      AArch64 -mcpu target (default: cortex-x4 with --headset steam_frame,
+                                   else native)
 EOF
 }
 
@@ -114,6 +126,10 @@ while [[ $# -gt 0 ]]; do
         --translator-bin) translator_bin_override=$2; shift 2 ;;
         --native-prebuilt-dir) native_prebuilt_dir=$2; shift 2 ;;
         --sysroot) sysroot=$2; shift 2 ;;
+        --openxr) openxr=1; shift ;;
+        --dawn-package) dawn_package_dir=$(cd "$2" && pwd); shift 2 ;;
+        --headset) headset=$2; shift 2 ;;
+        --cpu) linux_cpu=$2; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
     esac
@@ -171,6 +187,18 @@ require_command "$cxx_bin" cxx
 
 if [[ -n "$native_prebuilt_dir" ]]; then
     assert_file "$native_prebuilt_dir/native_prebuilt.cmake" "Native prebuilt package"
+fi
+case "$headset" in
+    ""|steam_frame) ;;
+    *) fail "--headset must be steam_frame or left out" ;;
+esac
+if [[ -n "$dawn_package_dir" ]]; then
+    assert_file "$dawn_package_dir/aurora-dawn.json" "Patched Dawn package manifest (Launcher/build-dawn-linux.sh)"
+    [[ -z "$native_prebuilt_dir" ]] ||
+        fail "--dawn-package and --native-prebuilt-dir exclude each other: the prebuilt package carries its own Dawn"
+fi
+if [[ "$openxr" -eq 1 && -z "$dawn_package_dir" ]]; then
+    fail "--openxr needs --dawn-package: the Linux OpenXR backend binds Dawn's own Vulkan device through Aurora's patches"
 fi
 
 project=$workspace/projects/mkwii/recomp.yml
@@ -417,6 +445,24 @@ if [[ -n "$fuse_ld_override" ]]; then
 fi
 if [[ -n "$native_prebuilt_dir" ]]; then
     configure_args+=(-DMKW_NATIVE_PREBUILT_DIR="$native_prebuilt_dir")
+fi
+# VR and the headset are passed on every configure, so an incremental build never keeps a choice
+# from an earlier run.
+if [[ "$openxr" -eq 1 ]]; then
+    configure_args+=(-DMKW_ENABLE_OPENXR=ON)
+else
+    configure_args+=(-DMKW_ENABLE_OPENXR=OFF)
+fi
+configure_args+=(-DMKW_HEADSET="$headset")
+if [[ -n "$linux_cpu" ]]; then
+    configure_args+=(-DMKW_LINUX_CPU="$linux_cpu")
+else
+    configure_args+=(-UMKW_LINUX_CPU)
+fi
+if [[ -n "$dawn_package_dir" ]]; then
+    configure_args+=(-DAURORA_DAWN_PROVIDER=package -DFETCHCONTENT_SOURCE_DIR_DAWN_PREBUILT="$dawn_package_dir")
+else
+    configure_args+=(-UAURORA_DAWN_PROVIDER -UFETCHCONTENT_SOURCE_DIR_DAWN_PREBUILT)
 fi
 if [[ -n "$sysroot" ]]; then
     configure_args+=(-DCMAKE_SYSROOT="$sysroot")

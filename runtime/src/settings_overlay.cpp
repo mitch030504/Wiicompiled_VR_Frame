@@ -146,14 +146,17 @@ bool g_vrHudVirtualScreen = RuntimeConfigFile::VrHudVirtualScreen(true);
 int g_vrRaceView = static_cast<int>(RuntimeConfigFile::GetVrRaceView());
 bool g_vrFlatScreen = g_vrRaceView == static_cast<int>(RuntimeConfigFile::VrRaceView::FlatScreen);
 constexpr std::array<const char*, 3> kVrRaceViewLabels{"Immersive", "Immersive window", "Flat screen"};
-#if defined(__ANDROID__)
+#if defined(MKW_VR_STANDALONE)
+#if defined(__ANDROID__) && !defined(MKW_HEADSET_STEAM_FRAME)
 bool g_vrPassthrough = RuntimeConfigFile::VrPassthrough();
+#endif
 bool g_vrHandTracking = RuntimeConfigFile::VrHandTracking();
 // Menu labels for the foveation levels, index-matched to RuntimeConfigFile::kVrFoveationLevels and to
 // aurora_set_stereo_foveation.
 constexpr std::array<const char*, 4> kVrFoveationLabels{"Off", "Low", "Medium", "High"};
 static_assert(kVrFoveationLabels.size() == RuntimeConfigFile::kVrFoveationLevels.size());
 int g_vrFoveation = static_cast<int>(RuntimeConfigFile::VrFoveationLevelIndex(RuntimeConfigFile::VrFoveation()));
+bool g_vrEyeTrackedFoveation = RuntimeConfigFile::VrEyeTrackedFoveation();
 #endif
 bool g_vrFirstPerson = RuntimeConfigFile::VrFirstPerson(false);
 bool g_vrFirstPersonToggleClick = RuntimeConfigFile::VrFirstPersonToggleClick();
@@ -187,6 +190,9 @@ int g_vrFrameInterpolationMode = [] {
     return static_cast<int>(std::find(kVrInterpolationFps.begin(), kVrInterpolationFps.end(), value) -
                             kVrInterpolationFps.begin());
 }();
+// [vr] refresh_rate choices; a value set in Config.toml outside them is shown as it is.
+constexpr std::array<uint32_t, 5> kVrRefreshRates{0, 72, 90, 120, 144};
+uint32_t g_vrRefreshRate = RuntimeConfigFile::VrRefreshRate();
 int g_vrFirstPersonHiddenModel = RuntimeConfigFile::VrFirstPersonHiddenModel();
 bool g_openxrDiagnosticsLogging = RuntimeConfigFile::DiagnosticsOpenXRLogging(false);
 bool g_firstPersonDiagnosticsLogging = RuntimeConfigFile::DiagnosticsFirstPersonLogging(false);
@@ -1254,7 +1260,7 @@ void DrawVrSteeringWheelSettings() {
                           "trailed item.");
     }
     ImGui::EndDisabled();
-#if defined(__ANDROID__)
+#if defined(MKW_VR_STANDALONE)
     ImGui::BeginDisabled(!g_vrHandSteering && g_vrCockpitItemHand == 2);
     if (ImGui::Checkbox("Tracked hands", &g_vrHandTracking)) {
         RuntimeConfigFile::SetVrHandTracking(g_vrHandTracking);
@@ -1485,7 +1491,8 @@ void DrawVrSettings() {
                                 eyes.scaled_height, g_vrRenderScalePercent);
         }
     }
-#if defined(__ANDROID__)
+#if defined(MKW_VR_STANDALONE)
+#if defined(__ANDROID__) && !defined(MKW_HEADSET_STEAM_FRAME)
     if (ImGui::Checkbox("Passthrough around the menu screen", &g_vrPassthrough)) {
         mkw::vr::OpenXRSetPassthrough(g_vrPassthrough);
         RuntimeConfigFile::SetVrPassthrough(g_vrPassthrough);
@@ -1497,6 +1504,7 @@ void DrawVrSettings() {
             "fully virtual; the immersive window and the Flat Screen race have the room "
             "around them too. Applies immediately.");
     }
+#endif
     // Shows the live level Aurora holds.
     g_vrFoveation = static_cast<int>(aurora_get_stereo_foveation());
     if (ImGui::Combo("Foveated rendering", &g_vrFoveation, kVrFoveationLabels.data(),
@@ -1516,7 +1524,39 @@ void DrawVrSettings() {
                         "lenses blur the picture anyway, to free GPU time. This session started with it "
                         "off, or without a GPU that supports it: a new level applies after a restart.");
     }
+    if (ImGui::Checkbox("Foveation follows the eyes", &g_vrEyeTrackedFoveation)) {
+        RuntimeConfigFile::SetVrEyeTrackedFoveation(g_vrEyeTrackedFoveation);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(
+            "With a headset that tracks the eyes (the Steam Frame), the sharp centre of the foveated "
+            "race view moves to where you look instead of staying straight ahead. Turning it off "
+            "applies immediately; turning it on needs a restart if the session started without it.");
+    }
 #endif
+    {
+        const auto rateLabel = [](uint32_t hz) {
+            return hz == 0 ? std::string("Headset's own") : std::to_string(hz) + " Hz";
+        };
+        if (ImGui::BeginCombo("Headset refresh rate", rateLabel(g_vrRefreshRate).c_str())) {
+            for (const uint32_t hz : kVrRefreshRates) {
+                if (ImGui::Selectable(rateLabel(hz).c_str(), hz == g_vrRefreshRate) && hz != g_vrRefreshRate) {
+                    g_vrRefreshRate = hz;
+                    // The XR thread follows the setting and asks the runtime for it.
+                    RuntimeConfigFile::SetVrRefreshRate(hz);
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(
+                "Asks the headset for this display rate. The game runs at 60 FPS, so 120 Hz shows every "
+                "frame for exactly two refreshes, where 72 and 90 Hz hold some frames longer than others. "
+                "Only runtimes that let apps choose (XR_FB_display_refresh_rate: the Quest, the Steam "
+                "Frame, Virtual Desktop) take it; the Headset line below shows the rate in use. Applies "
+                "immediately.");
+        }
+    }
     if (ImGui::Combo("VR frame interpolation (experimental)", &g_vrFrameInterpolationMode,
                      kVrInterpolationLabels.data(), static_cast<int>(kVrInterpolationLabels.size()))) {
         const auto target = kVrInterpolationFps[static_cast<size_t>(g_vrFrameInterpolationMode)];
@@ -1526,7 +1566,7 @@ void DrawVrSettings() {
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip(
             "Auto matches the headset refresh rate. 72, 90 and 120 cap the scene rendering rate; "
-            "set the headset's refresh rate in Virtual Desktop or your VR runtime. "
+            "set the headset's refresh rate above, or in Virtual Desktop or your VR runtime. "
             "The game stays at 60 Hz. Adds one game frame of scene latency; head tracking stays current. "
             "Needs GPU headroom and may show interpolation artifacts. Applies immediately.");
     }
@@ -1789,7 +1829,7 @@ void DrawVrCameraSettings() {
         RuntimeConfigFile::SetVrHandSteering(g_vrHandSteering);
         RuntimeConfigFile::SetVrCockpitItemHand(RuntimeConfigFile::kVrCockpitItemHandDefault);
         RuntimeConfigFile::SetVrCockpitItemThrow(g_vrCockpitItemThrow);
-#if defined(__ANDROID__)
+#if defined(MKW_VR_STANDALONE)
         g_vrHandTracking = RuntimeConfigFile::kVrHandTrackingDefault;
         RuntimeConfigFile::SetVrHandTracking(g_vrHandTracking);
 #endif
@@ -2491,7 +2531,7 @@ void InitializeRuntimeSettings() noexcept {
     aurora_set_display_mode(static_cast<AuroraDisplayMode>(g_displayMode));
     g_displayMode = static_cast<int>(aurora_get_display_mode());
     aurora_set_disable_copy_filter(g_disableCopyFilter);
-#if defined(__ANDROID__)
+#if defined(MKW_VR_STANDALONE)
     aurora_set_stereo_foveation(static_cast<uint32_t>(g_vrFoveation));
 #endif
     aurora_set_stereo_mirror_view(static_cast<AuroraStereoMirrorView>(g_vrMirrorView));

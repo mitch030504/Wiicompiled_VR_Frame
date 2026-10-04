@@ -559,8 +559,13 @@
     <string name="vr_performance_level_sustained_low">Sustained low</string>
     <string name="vr_performance_level_power_savings">Power savings</string>
     <string name="vr_performance_level_default">Headset default</string>
+    <string name="vr_refresh_rate">Headset refresh rate</string>
+    <string name="vr_refresh_rate_helper">The display rate asked of the headset. The game runs at 60 FPS, so 120 Hz shows every frame for exactly two refreshes, where 72 and 90 Hz hold some frames longer than others. A rate the headset does not offer leaves its own.</string>
+    <string name="vr_refresh_rate_headset">Headset\'s own</string>
     <string name="vr_foveation">Foveated rendering</string>
     <string name="vr_foveation_helper">Shades the edges of the race view in coarser blocks, where the lenses blur the picture anyway, to free GPU time for a higher render scale or a steadier frame rate. Higher levels start closer to the centre; High also coarsens the corners of the HUD. Menus are never foveated.</string>
+    <string name="vr_eye_tracked_foveation">Foveation follows the eyes</string>
+    <string name="vr_eye_tracked_foveation_helper">With eye tracking (the Steam Frame), the sharp centre of the foveated race view moves to where you look instead of staying straight ahead.</string>
     <string name="vr_foveation_off">Off</string>
     <string name="vr_foveation_low">Low</string>
     <string name="vr_foveation_medium">Medium</string>

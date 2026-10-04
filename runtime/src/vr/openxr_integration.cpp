@@ -9,6 +9,7 @@
 #include "runtime_config.h"
 #include "gx_thread.h"
 #include "runtime_log.h"
+#include "vr/eye_gaze.h"
 #include "vr/mkw_vr_culling.h"
 #include "vr/mkw_vr_first_person.h"
 #include "vr/mkw_vr_policy.h"
@@ -29,6 +30,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <vector>
 
 #if defined(MKW_ENABLE_OPENXR)
 #include "vr/openxr_backend.h"
@@ -43,6 +45,14 @@
 #include "vr/openxr_vulkan.h"
 #include <time.h>
 #include <unistd.h>
+#define XR_USE_TIMESPEC
+#include <openxr/openxr_platform.h>
+#define MKW_OPENXR_GRAPHICS_BACKEND 1
+#elif defined(__linux__)
+// Desktop Linux, SteamOS on the Steam Frame above all: the PC's same-device Vulkan backend, with
+// Dawn's own device bound to the session.
+#include "vr/openxr_vulkan_win32.h"
+#include <time.h>
 #define XR_USE_TIMESPEC
 #include <openxr/openxr_platform.h>
 #define MKW_OPENXR_GRAPHICS_BACKEND 1
@@ -83,8 +93,11 @@ void ConfigurePolicy(bool enabled) noexcept {
 #if defined(_WIN32)
 using GraphicsBackend = OpenXRWindowsBackend;
 
-#else
+#elif defined(__ANDROID__)
 using GraphicsBackend = OpenXRVulkanBackend;
+inline constexpr const char* kGraphicsBackendName = "Vulkan";
+#else
+using GraphicsBackend = OpenXRWindowsVulkanBackend;
 inline constexpr const char* kGraphicsBackendName = "Vulkan";
 #endif
 
@@ -407,7 +420,18 @@ public:
 #if defined(_WIN32)
         config.required_extensions = {kRequiredAuroraBackend == BACKEND_VULKAN ? "XR_KHR_vulkan_enable2" : "XR_KHR_D3D12_enable"};
         config.optional_extensions = {"XR_KHR_win32_convert_performance_counter_time",
-                                      "XR_FB_display_refresh_rate", "XR_EXT_performance_settings"};
+                                      "XR_FB_display_refresh_rate", "XR_EXT_performance_settings",
+                                      "XR_VALVE_frame_controller_interaction"};
+        AddHandMeshExtensions(config);
+#elif defined(__linux__) && !defined(__ANDROID__)
+        // As the PC's Vulkan binding, plus the clock conversion Linux uses and the Steam Frame's
+        // eye gaze for eye-tracked foveation.
+        config.required_extensions = {"XR_KHR_vulkan_enable2"};
+        config.optional_extensions = {"XR_KHR_convert_timespec_time", "XR_FB_display_refresh_rate",
+                                      "XR_EXT_performance_settings", "XR_VALVE_frame_controller_interaction"};
+        if (RuntimeConfigFile::VrEyeTrackedFoveation()) {
+            config.optional_extensions.push_back("XR_EXT_eye_gaze_interaction");
+        }
         AddHandMeshExtensions(config);
 #else
         // Either Vulkan binding extension is acceptable; the backend picks
@@ -415,11 +439,21 @@ public:
         config.required_extensions = {"XR_KHR_android_create_instance"};
         // XR_FB_passthrough: the room around the virtual screen (OpenXRPassthrough), asked for
         // whatever [vr] passthrough says, since the setting is live.
+        // XR_VALVE_frame_controller_interaction: the Steam Frame's controllers, D-pad included
+        // (OpenXRInput::SuggestBindings), under SteamVR here or streamed from a PC.
         config.optional_extensions = {"XR_KHR_vulkan_enable2", "XR_KHR_vulkan_enable",
                                       "XR_KHR_convert_timespec_time",
                                       "XR_KHR_android_thread_settings",
                                       "XR_FB_display_refresh_rate", "XR_EXT_performance_settings",
-                                      "XR_FB_passthrough"};
+                                      "XR_VALVE_frame_controller_interaction"};
+#if !defined(MKW_HEADSET_STEAM_FRAME)
+        // Horizon OS's room view; the Steam Frame build neither asks for it nor offers the setting.
+        config.optional_extensions.push_back("XR_FB_passthrough");
+#endif
+        // Eye-tracked foveation: the gaze the density maps centre on (OpenXRInput::EyeGaze).
+        if (RuntimeConfigFile::VrEyeTrackedFoveation()) {
+            config.optional_extensions.push_back("XR_EXT_eye_gaze_interaction");
+        }
         AddHandMeshExtensions(config);
         config.instance_create_next = OpenXRAndroidInstanceCreateNext();
 #endif
@@ -443,6 +477,8 @@ public:
 #endif
         if (has_extension("XR_FB_display_refresh_rate")) {
             runtime_->LoadFunction("xrGetDisplayRefreshRateFB", &get_display_refresh_rate_);
+            runtime_->LoadFunction("xrEnumerateDisplayRefreshRatesFB", &enumerate_refresh_rates_);
+            runtime_->LoadFunction("xrRequestDisplayRefreshRateFB", &request_refresh_rate_);
         }
         if (has_extension("XR_EXT_performance_settings")) {
             runtime_->LoadFunction("xrPerfSettingsSetPerformanceLevelEXT", &set_performance_level_);
@@ -573,6 +609,8 @@ public:
         prepared_ = false;
         convert_display_time_ = nullptr;
         get_display_refresh_rate_ = nullptr;
+        enumerate_refresh_rates_ = nullptr;
+        request_refresh_rate_ = nullptr;
         set_performance_level_ = nullptr;
         headset_hz_.store(0, std::memory_order_relaxed);
         rendered_fps_.store(0, std::memory_order_relaxed);
@@ -587,6 +625,10 @@ public:
         ResetTrackingOrigin();
         applied_session_run_serial_ = 0;
         session_was_active_ = false;
+        refresh_rate_session_serial_ = 0;
+        requested_refresh_rate_ = 0;
+        session_start_refresh_rate_ = 0.0f;
+        refresh_rate_changed_ = false;
     }
 
     bool IsRunning() const noexcept { return running_.load(std::memory_order_acquire); }
@@ -697,10 +739,16 @@ private:
     void ApplyGraphicsRequirements(AuroraConfig& aurora_config) {
         aurora_config.desiredBackend = kRequiredAuroraBackend;
         aurora_config.xrInterop = true;
-#if defined(__ANDROID__)
-        // Foveated rendering: fragment density maps are decided with the device. They put a flag on
-        // every render pipeline, so a session launched with foveation off does without them.
+#if !defined(_WIN32)
+        // Foveated rendering (the Quest's and desktop Linux's patched Dawn): fragment density maps
+        // are decided with the device. They put a flag on every render pipeline, so a session
+        // launched with foveation off does without them.
         aurora_config.xrFragmentDensityMap = RuntimeConfigFile::VrFoveation() != "off";
+#endif
+#if defined(MKW_HEADSET_STEAM_FRAME) && !defined(__ANDROID__)
+        // The Frame's native build: the headset is the only display anyone looks at, so the
+        // desktop window is neither presented nor fully rendered, as on Android.
+        aurora_config.xrHeadsetOnly = true;
 #endif
 #if defined(_WIN32)
         if (kRequiredAuroraBackend != BACKEND_D3D12) return;
@@ -792,6 +840,70 @@ private:
         RT_LOG(RT_TAG_RUNTIME) << "OpenXR: performance level \"" << requested << "\" CPU "
                                << (XR_SUCCEEDED(cpu) ? "set" : "refused") << " (" << cpu << "), GPU "
                                << (XR_SUCCEEDED(gpu) ? "set" : "refused") << " (" << gpu << ")" << std::endl;
+    }
+
+    // [vr] refresh_rate (XR_FB_display_refresh_rate), asked of the runtime each time the session
+    // starts running and whenever the setting changes. The game renders 60 frames a second, so a
+    // display at 120 Hz shows each one for exactly two refreshes. 0 gives back the rate the session
+    // started at, if this changed it. A rate the runtime does not list, or declines (SteamVR may),
+    // is logged and the runtime keeps its own.
+    void ApplyRefreshRate(uint32_t requested, bool session_started) {
+        if (runtime_ == nullptr || !runtime_->HasSession()) {
+            return;
+        }
+        if (session_started) {
+            session_start_refresh_rate_ = 0.0f;
+            refresh_rate_changed_ = false;
+            if (get_display_refresh_rate_ != nullptr &&
+                XR_FAILED(get_display_refresh_rate_(runtime_->Session(), &session_start_refresh_rate_))) {
+                session_start_refresh_rate_ = 0.0f;
+            }
+        }
+        float target = static_cast<float>(requested);
+        if (requested == 0) {
+            if (!refresh_rate_changed_ || !(session_start_refresh_rate_ > 0.0f)) {
+                return;
+            }
+            target = session_start_refresh_rate_;
+        }
+        if (enumerate_refresh_rates_ == nullptr || request_refresh_rate_ == nullptr) {
+            RT_LOG(RT_TAG_RUNTIME) << "OpenXR: display refresh rate " << target
+                                   << " Hz not requested: the runtime does not offer XR_FB_display_refresh_rate"
+                                   << std::endl;
+            return;
+        }
+        uint32_t count = 0;
+        XrResult result = enumerate_refresh_rates_(runtime_->Session(), 0, &count, nullptr);
+        std::vector<float> rates;
+        if (XR_SUCCEEDED(result) && count > 0) {
+            rates.resize(count);
+            result = enumerate_refresh_rates_(runtime_->Session(), count, &count, rates.data());
+            rates.resize(XR_SUCCEEDED(result) ? std::min<size_t>(count, rates.size()) : 0);
+        }
+        if (XR_FAILED(result) || rates.empty()) {
+            RT_LOG(RT_TAG_RUNTIME) << "OpenXR: display refresh rate " << target
+                                   << " Hz not requested: the runtime lists no rates (" << result << ")" << std::endl;
+            return;
+        }
+        std::ostringstream available;
+        for (size_t i = 0; i < rates.size(); ++i) {
+            available << (i == 0 ? "" : "/") << rates[i];
+        }
+        const float rate = MatchDisplayRefreshRate(rates.data(), static_cast<uint32_t>(rates.size()), target);
+        if (rate == 0.0f) {
+            RT_LOG(RT_TAG_RUNTIME) << "OpenXR: display refresh rate " << target
+                                   << " Hz is not offered (available " << available.str()
+                                   << " Hz); keeping the runtime's" << std::endl;
+            return;
+        }
+        const XrResult set = request_refresh_rate_(runtime_->Session(), rate);
+        if (XR_SUCCEEDED(set)) {
+            refresh_rate_changed_ = requested != 0;
+        }
+        RT_LOG(RT_TAG_RUNTIME) << "OpenXR: display refresh rate " << rate << " Hz "
+                               << (XR_SUCCEEDED(set) ? "requested" : "refused") << " (" << set << "; available "
+                               << available.str() << " Hz, session started at " << session_start_refresh_rate_
+                               << " Hz)" << std::endl;
     }
 
     static bool ProvideStereoFrame(uint32_t, AuroraStereoFrame* output, void* userdata) {
@@ -890,6 +1002,14 @@ private:
                 rendered_fps_.store(0, std::memory_order_relaxed);
                 WaitForStopOrDelay(std::chrono::milliseconds(5));
                 continue;
+            }
+            // The configured refresh rate, at each session start and whenever it changes.
+            if (const uint32_t refresh_rate = RuntimeConfigFile::VrRefreshRate();
+                session_run_serial != refresh_rate_session_serial_ || refresh_rate != requested_refresh_rate_) {
+                const bool session_started = session_run_serial != refresh_rate_session_serial_;
+                refresh_rate_session_serial_ = session_run_serial;
+                requested_refresh_rate_ = refresh_rate;
+                ApplyRefreshRate(refresh_rate, session_started);
             }
 
             const MkwVRPolicySnapshot policy = MkwVRPolicyGetSnapshot();
@@ -1377,7 +1497,28 @@ private:
                          position_valid && base_position_valid_, units_per_meter,
                          lean_back_radians, destination.eyes[eye].viewFromCenter);
         }
+        BuildEyeGaze(source, destination);
         BuildCockpit(source, position_valid, units_per_meter, lean_back_radians, destination.cockpit);
+    }
+
+    // Eye-tracked foveation: where the eyes look, in each eye's own view (the views may be canted),
+    // from the gaze the input located for this packet's display time. Without a tracked gaze, or
+    // with the setting off, Aurora centres foveation on each eye's forward direction.
+    void BuildEyeGaze(const OpenXRBackendFrame& source, AuroraStereoFrame& destination) const noexcept {
+        XrQuaternionf gaze{};
+        if (input_ == nullptr || !RuntimeConfigFile::VrEyeTrackedFoveation() || !input_->EyeGaze(&gaze)) {
+            return;
+        }
+        bool valid = true;
+        for (uint32_t eye = 0; eye < kOpenXREyeCount; ++eye) {
+            const XrQuaternionf& view = source.xr_frame.views[eye].pose.orientation;
+            const eye_gaze::Tangents seen =
+                eye_gaze::InEye({gaze.x, gaze.y, gaze.z, gaze.w}, {view.x, view.y, view.z, view.w});
+            valid = valid && seen.valid;
+            destination.gaze[eye][0] = seen.x;
+            destination.gaze[eye][1] = seen.y;
+        }
+        destination.gazeValid = valid;
     }
 
     // The first-person cockpit's hands and separate wheel, in the seated frame
@@ -1871,7 +2012,15 @@ private:
     std::chrono::steady_clock::time_point timing_start_ = std::chrono::steady_clock::now();
     uint32_t timing_submissions_ = 0;
     PFN_xrGetDisplayRefreshRateFB get_display_refresh_rate_ = nullptr;
+    PFN_xrEnumerateDisplayRefreshRatesFB enumerate_refresh_rates_ = nullptr;
+    PFN_xrRequestDisplayRefreshRateFB request_refresh_rate_ = nullptr;
     PFN_xrPerfSettingsSetPerformanceLevelEXT set_performance_level_ = nullptr;
+    // [vr] refresh_rate as last applied, the session run it was applied in, and the rate that run
+    // started at (pacing thread).
+    uint64_t refresh_rate_session_serial_ = 0;
+    uint32_t requested_refresh_rate_ = 0;
+    float session_start_refresh_rate_ = 0.0f;
+    bool refresh_rate_changed_ = false;
 #if defined(_WIN32)
     using ConvertDisplayTime = XrResult (XRAPI_PTR*)(XrInstance, XrTime, LARGE_INTEGER*);
 #else

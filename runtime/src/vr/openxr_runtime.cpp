@@ -151,6 +151,14 @@ bool OpenXRRuntime::EnumerateInstanceCapabilities() {
     for (const XrExtensionProperties& extension : extension_properties) {
         m_available_extensions.emplace_back(extension.extensionName);
     }
+    // Everything the runtime offers, once per instance: what a new headset's runtime can do (the
+    // Steam Frame's SteamVR, say) is in the first session log rather than behind a debugger.
+    std::ostringstream offered;
+    offered << "OpenXR runtime offers " << m_available_extensions.size() << " extensions:";
+    for (const std::string& name : m_available_extensions) {
+        offered << ' ' << name;
+    }
+    Log(OpenXRLogLevel::Info, offered.str());
 
     uint32_t layer_count = 0;
     if (!Check(xrEnumerateApiLayerProperties(0, &layer_count, nullptr),

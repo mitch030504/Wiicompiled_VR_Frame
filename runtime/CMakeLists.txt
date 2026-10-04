@@ -37,6 +37,22 @@ option(MKW_BUILD_PRODUCTS "Build translated WiiCompiled product targets" ON)
 # aurora-main and its third-party tree stay unaffected.
 set(MKW_PROJECT_COMPILE_DEFINITIONS NOMINMAX)
 
+# The headset a standalone build is for: the Android app's Gradle flavour passes
+# it, and so does a native SteamOS build for the Steam Frame
+# (Launcher/local-build.sh --headset steam_frame). The Steam Frame takes its own
+# defaults (runtime_config.h) through MKW_HEADSET_STEAM_FRAME. The definition
+# reaches every target below, so the Quest game kit's recorded compile flags carry
+# it too.
+if(MKW_PLATFORM_ANDROID OR MKW_PLATFORM_LINUX)
+    set(MKW_HEADSET "" CACHE STRING "Headset the build targets: empty (a Meta Quest on Android, any PC headset elsewhere) or steam_frame")
+    set_property(CACHE MKW_HEADSET PROPERTY STRINGS "" steam_frame)
+    if(MKW_HEADSET STREQUAL "steam_frame")
+        list(APPEND MKW_PROJECT_COMPILE_DEFINITIONS MKW_HEADSET_STEAM_FRAME=1)
+    elseif(NOT MKW_HEADSET STREQUAL "")
+        message(FATAL_ERROR "MKW_HEADSET must be empty or steam_frame, not '${MKW_HEADSET}'")
+    endif()
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 
 # Declared before the vendored libraries so the third-party block below can
@@ -133,10 +149,10 @@ set(MKW_TRANSLATED_COMPILE_JOBS 0 CACHE STRING
 Scheduling only - never affects output bytes, so it is deliberately outside the canonical flag fingerprint.")
 set(MKW_CPPWINRT_INCLUDE_DIR "" CACHE PATH "Optional self-contained C++/WinRT include directory")
 
-# The functional backend is currently Windows D3D12, so only Windows defaults
-# to carrying the loader. Linux keeps the capability-gated Vulkan scaffold
-# available to explicit developer builds without making a nonfunctional SDK
-# fetch part of every normal build.
+# Windows and Android carry the loader by default. Desktop Linux has the
+# same-device Vulkan backend too, but it needs a Dawn built with Aurora's patches
+# (Launcher/build-dawn-linux.sh), so it stays opt-in: Launcher/local-build.sh
+# --openxr, as the Steam Frame's native SteamOS build uses it.
 set(MKW_ENABLE_OPENXR_DEFAULT OFF)
 if(MKW_PLATFORM_WINDOWS OR MKW_PLATFORM_ANDROID)
     set(MKW_ENABLE_OPENXR_DEFAULT ON)
@@ -286,7 +302,9 @@ if(MKW_PROJECT_COMPILE_DEFINITIONS)
     add_compile_definitions(${MKW_PROJECT_COMPILE_DEFINITIONS})
 endif()
 
-if(MKW_PLATFORM_WINDOWS AND MKW_ENABLE_OPENXR)
+# The same-device Vulkan backend (openxr_vulkan_win32.cpp, on Windows and desktop
+# Linux) includes vulkan.h; the pin keeps it independent of the build machine.
+if((MKW_PLATFORM_WINDOWS OR MKW_PLATFORM_LINUX) AND MKW_ENABLE_OPENXR)
     include(FetchContent)
     FetchContent_Declare(vulkan_headers
         URL "https://github.com/KhronosGroup/Vulkan-Headers/archive/015e25c3c91b70eb1a754d36fb14c4ba6ad9b0b9.tar.gz"
@@ -441,6 +459,11 @@ add_executable(mkw_vr_wii_remote_tests "${CMAKE_CURRENT_LIST_DIR}/tests/vr_wii_r
 target_include_directories(mkw_vr_wii_remote_tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
 target_compile_features(mkw_vr_wii_remote_tests PRIVATE cxx_std_17)
 add_test(NAME mkw_vr_wii_remote_tests COMMAND mkw_vr_wii_remote_tests)
+# Eye-tracked foveation: the gaze in each eye's view (vr/eye_gaze.h).
+add_executable(mkw_vr_eye_gaze_tests "${CMAKE_CURRENT_LIST_DIR}/tests/vr_eye_gaze_tests.cpp")
+target_include_directories(mkw_vr_eye_gaze_tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
+target_compile_features(mkw_vr_eye_gaze_tests PRIVATE cxx_std_17)
+add_test(NAME mkw_vr_eye_gaze_tests COMMAND mkw_vr_eye_gaze_tests)
 
 # The in-headset settings panel's controller chord, release latch, selection,
 # scrolling and canvas mapping, plus the thread bridge they publish through.

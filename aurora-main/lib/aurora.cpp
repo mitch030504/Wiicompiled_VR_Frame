@@ -607,6 +607,17 @@ std::mutex g_surfaceMutex;
 std::atomic<bool> g_surfaceReconfigurePending{false};
 std::atomic<bool> g_surfaceRecreatePending{false};
 
+// One fragment density map of an eye (see StereoEyeTarget): centred on the eye's forward direction,
+// or on a gaze cell (gfx/foveation.hpp) with eye-tracked foveation.
+struct EyeDensityMap {
+  gfx::foveation::GazeCell cell;
+  bool forward = true;
+  uint64_t map = 0;
+  uint64_t lastUse = 0;
+};
+// The gaze cells' maps an eye keeps: a few glances' worth, each 2 bytes per 32x32 pixels.
+constexpr size_t kEyeDensityMapCacheSize = 32;
+
 struct StereoEyeTarget {
   webgpu::TextureWithSampler color;
   webgpu::TextureWithSampler resolvedColor;
@@ -620,24 +631,31 @@ struct StereoEyeTarget {
   // the target when ensure_stereo_eye_target replaces the textures.
   wgpu::BindGroup copyBindGroup;
   // Foveated rendering: a second view of `color` for the immersive eye passes,
-  // which the patched Dawn binds to this eye's fragment density map
-  // (webgpu/fdm.hpp), and what that map was built for.
+  // which the patched Dawn binds to one of this eye's fragment density maps
+  // (webgpu/fdm.hpp). The maps share what densityBase records (the eye's size,
+  // level and field of view); with eye tracking there is one per gaze cell
+  // looked at, the least recently used dropped beyond kEyeDensityMapCacheSize.
   wgpu::TextureView foveatedView;
-  uint64_t densityMap = 0;
-  std::array<int32_t, 7> densityKey{};
+  std::array<int32_t, 7> densityBase{};
+  std::vector<EyeDensityMap> densityMaps;
+  uint64_t boundDensityMap = 0;
+  uint64_t densityUses = 0;
 
   const webgpu::TextureWithSampler& output() const noexcept { return resolvedColor.texture ? resolvedColor : color; }
 };
 std::array<StereoEyeTarget, AURORA_STEREO_EYE_COUNT> g_stereoEyeTargets;
 stereo::MirrorState g_stereoMirrorState;
 
-// The map's binding holds the foveated view, and with it the eye texture, until it is released.
+// A map's binding holds the foveated view, and with it the eye texture, until it is released.
 void release_eye_density_map(StereoEyeTarget& target) noexcept {
-  if (target.densityMap != 0) {
-    webgpu::fdm::release_map(target.densityMap);
-    target.densityMap = 0;
+  for (const EyeDensityMap& entry : target.densityMaps) {
+    if (entry.map != 0) {
+      webgpu::fdm::release_map(entry.map);
+    }
   }
-  target.densityKey = {};
+  target.densityMaps.clear();
+  target.boundDensityMap = 0;
+  target.densityBase = {};
 }
 
 // The eye targets outlive a frame, so the mirror samples them through a bind
@@ -689,9 +707,12 @@ void ensure_stereo_eye_target(uint32_t eyeIndex, uint32_t width, uint32_t height
 }
 
 // The view an immersive eye's passes render through while foveated, or none. The eye's fragment
-// density map is rebuilt whenever its size, field of view or level changes (a map is immutable), and
-// is used once its upload has completed.
-wgpu::TextureView foveated_eye_view(uint32_t eyeIndex, const AuroraStereoEye& input) {
+// density maps are rebuilt whenever its size, field of view or level changes (a map is immutable).
+// `gaze`, the tangents the player looks at when eye tracking provides them, picks the map centred on
+// the gaze cell it falls in, built on first use; without it the map is centred on the eye's forward
+// direction. A map is bound once its upload has completed, and until then the eye keeps the map it
+// had, so a glance never leaves the eye unfoveated.
+wgpu::TextureView foveated_eye_view(uint32_t eyeIndex, const AuroraStereoEye& input, const float* gaze) {
   auto& target = g_stereoEyeTargets[eyeIndex];
   const auto level = static_cast<gfx::foveation::Level>(gfx::get_stereo_foveation());
   if (level == gfx::foveation::Level::Off || target.samples > 1 || !webgpu::fdm::available()) {
@@ -700,42 +721,84 @@ wgpu::TextureView foveated_eye_view(uint32_t eyeIndex, const AuroraStereoEye& in
   const auto fov = gfx::foveation::fov_from_projection(input.projection);
   // Hundredths of a tangent: finer than a map texel, coarse enough to ignore pose noise.
   const auto hundredths = [](float value) { return static_cast<int32_t>(std::lround(value * 100.0f)); };
-  const std::array<int32_t, 7> key{static_cast<int32_t>(target.color.size.width),
-                                   static_cast<int32_t>(target.color.size.height),
-                                   static_cast<int32_t>(level),
-                                   hundredths(fov.tanLeft),
-                                   hundredths(fov.tanRight),
-                                   hundredths(fov.tanDown),
-                                   hundredths(fov.tanUp)};
-  if (key != target.densityKey) {
+  const std::array<int32_t, 7> base{static_cast<int32_t>(target.color.size.width),
+                                    static_cast<int32_t>(target.color.size.height),
+                                    static_cast<int32_t>(level),
+                                    hundredths(fov.tanLeft),
+                                    hundredths(fov.tanRight),
+                                    hundredths(fov.tanDown),
+                                    hundredths(fov.tanUp)};
+  if (base != target.densityBase) {
     release_eye_density_map(target);
-    target.densityKey = key;
-    if (!target.foveatedView) {
-      const wgpu::TextureViewDescriptor descriptor{
-          .label = eyeIndex == 0 ? "Foveated left eye" : "Foveated right eye",
-          .usage = wgpu::TextureUsage::RenderAttachment,
-      };
-      target.foveatedView = target.color.texture.CreateView(&descriptor);
+    target.densityBase = base;
+  }
+  if (!target.foveatedView) {
+    const wgpu::TextureViewDescriptor descriptor{
+        .label = eyeIndex == 0 ? "Foveated left eye" : "Foveated right eye",
+        .usage = wgpu::TextureUsage::RenderAttachment,
+    };
+    target.foveatedView = target.color.texture.CreateView(&descriptor);
+  }
+
+  const uint32_t width = target.color.size.width;
+  const uint32_t height = target.color.size.height;
+  const uint32_t texel = webgpu::fdm::texel_size();
+  const bool forward = gaze == nullptr;
+  const gfx::foveation::GazeCell cell =
+      forward ? gfx::foveation::GazeCell{}
+              : gfx::foveation::gaze_cell(width, height, texel, fov, {.tanX = gaze[0], .tanY = gaze[1]});
+  auto& maps = target.densityMaps;
+  auto entry = std::find_if(maps.begin(), maps.end(), [&](const EyeDensityMap& candidate) {
+    return candidate.forward == forward && (forward || candidate.cell == cell);
+  });
+  if (entry == maps.end()) {
+    if (maps.size() >= kEyeDensityMapCacheSize) {
+      // The least recently used map, never the one the eye renders with.
+      auto oldest = maps.end();
+      for (auto it = maps.begin(); it != maps.end(); ++it) {
+        if (it->map != target.boundDensityMap && (oldest == maps.end() || it->lastUse < oldest->lastUse)) {
+          oldest = it;
+        }
+      }
+      if (oldest != maps.end()) {
+        if (oldest->map != 0) {
+          webgpu::fdm::release_map(oldest->map);
+        }
+        maps.erase(oldest);
+      }
     }
+    const bool firstOfKind =
+        std::none_of(maps.begin(), maps.end(), [&](const EyeDensityMap& other) { return other.forward == forward; });
     gfx::foveation::Map map;
-    gfx::foveation::build(target.color.size.width, target.color.size.height, webgpu::fdm::texel_size(), fov, level,
-                          map);
-    target.densityMap = webgpu::fdm::create_map(map.width, map.height, map.rg8.data());
-    if (target.densityMap != 0 && !webgpu::fdm::bind(target.foveatedView, target.densityMap)) {
-      webgpu::fdm::release_map(target.densityMap);
-      target.densityMap = 0;
-    }
+    gfx::foveation::build(width, height, texel, fov, level, map,
+                          forward ? gfx::foveation::Gaze{}
+                                  : gfx::foveation::cell_gaze(width, height, texel, fov, cell));
+    EyeDensityMap created{.cell = cell, .forward = forward};
+    created.map = webgpu::fdm::create_map(map.width, map.height, map.rg8.data());
     static constexpr std::array<const char*, gfx::foveation::kLevelCount> kLevelNames{"off", "low", "medium", "high"};
-    if (target.densityMap != 0) {
-      Log.info("{} eye foveation {}: {}x{} density map, {} pixels per texel", eyeIndex == 0 ? "Left" : "Right",
-               kLevelNames[static_cast<uint32_t>(level)], map.width, map.height, webgpu::fdm::texel_size());
-    } else {
+    if (created.map == 0) {
       Log.warn("{} eye foveation {}: the {}x{} density map could not be created", eyeIndex == 0 ? "Left" : "Right",
                kLevelNames[static_cast<uint32_t>(level)], map.width, map.height);
+    } else if (firstOfKind) {
+      // Gaze maps come and go with the player's glances; the first says the eye follows the gaze.
+      Log.info("{} eye foveation {}{}: {}x{} density map, {} pixels per texel", eyeIndex == 0 ? "Left" : "Right",
+               kLevelNames[static_cast<uint32_t>(level)], forward ? "" : " following the gaze", map.width, map.height,
+               texel);
+    }
+    maps.push_back(created);
+    entry = std::prev(maps.end());
+  }
+  entry->lastUse = ++target.densityUses;
+  if (entry->map != 0 && entry->map != target.boundDensityMap && webgpu::fdm::map_ready(entry->map)) {
+    if (webgpu::fdm::bind(target.foveatedView, entry->map)) {
+      target.boundDensityMap = entry->map;
+    } else {
+      Log.warn("{} eye foveation: a density map could not be bound to the eye", eyeIndex == 0 ? "Left" : "Right");
+      webgpu::fdm::release_map(entry->map);
+      entry->map = 0;
     }
   }
-  return target.densityMap != 0 && webgpu::fdm::map_ready(target.densityMap) ? target.foveatedView
-                                                                             : wgpu::TextureView{};
+  return target.boundDensityMap != 0 ? target.foveatedView : wgpu::TextureView{};
 }
 
 std::optional<AuroraStereoFrame> request_stereo_frame(uint32_t logicalFrame, uint64_t contentTag) noexcept {
@@ -864,7 +927,8 @@ gfx::StereoReplayFrame make_stereo_replay_frame(const AuroraStereoFrame& input, 
     // Not the immersive window's eyes: the host may aim them through the window, whose field of
     // view then changes with every head movement and would rebuild the density map each frame.
     if (input.mode == AURORA_STEREO_FRAME_IMMERSIVE_REPLAY && !input.window) {
-      view.target.foveatedColorView = foveated_eye_view(eye, input.eyes[eye]);
+      view.target.foveatedColorView =
+          foveated_eye_view(eye, input.eyes[eye], input.gazeValid ? input.gaze[eye] : nullptr);
     }
     std::memcpy(&view.projection, input.eyes[eye].projection, sizeof(view.projection));
     std::memcpy(&view.viewFromCenter, input.eyes[eye].viewFromCenter, sizeof(view.viewFromCenter));
@@ -1352,7 +1416,7 @@ bool headset_owns_display() noexcept {
 #if defined(__ANDROID__)
   return stereo_frame_provider_active();
 #else
-  return false;
+  return g_config.xrHeadsetOnly && stereo_frame_provider_active();
 #endif
 }
 
