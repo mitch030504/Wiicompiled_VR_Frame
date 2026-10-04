@@ -48,6 +48,14 @@
 #define XR_USE_TIMESPEC
 #include <openxr/openxr_platform.h>
 #define MKW_OPENXR_GRAPHICS_BACKEND 1
+#elif defined(__linux__)
+// Desktop Linux, SteamOS on the Steam Frame above all: the PC's same-device Vulkan backend, with
+// Dawn's own device bound to the session.
+#include "vr/openxr_vulkan_win32.h"
+#include <time.h>
+#define XR_USE_TIMESPEC
+#include <openxr/openxr_platform.h>
+#define MKW_OPENXR_GRAPHICS_BACKEND 1
 #else
 #define MKW_OPENXR_GRAPHICS_BACKEND 0
 #endif
@@ -85,8 +93,11 @@ void ConfigurePolicy(bool enabled) noexcept {
 #if defined(_WIN32)
 using GraphicsBackend = OpenXRWindowsBackend;
 
-#else
+#elif defined(__ANDROID__)
 using GraphicsBackend = OpenXRVulkanBackend;
+inline constexpr const char* kGraphicsBackendName = "Vulkan";
+#else
+using GraphicsBackend = OpenXRWindowsVulkanBackend;
 inline constexpr const char* kGraphicsBackendName = "Vulkan";
 #endif
 
@@ -412,6 +423,16 @@ public:
                                       "XR_FB_display_refresh_rate", "XR_EXT_performance_settings",
                                       "XR_VALVE_frame_controller_interaction"};
         AddHandMeshExtensions(config);
+#elif defined(__linux__) && !defined(__ANDROID__)
+        // As the PC's Vulkan binding, plus the clock conversion Linux uses and the Steam Frame's
+        // eye gaze for eye-tracked foveation.
+        config.required_extensions = {"XR_KHR_vulkan_enable2"};
+        config.optional_extensions = {"XR_KHR_convert_timespec_time", "XR_FB_display_refresh_rate",
+                                      "XR_EXT_performance_settings", "XR_VALVE_frame_controller_interaction"};
+        if (RuntimeConfigFile::VrEyeTrackedFoveation()) {
+            config.optional_extensions.push_back("XR_EXT_eye_gaze_interaction");
+        }
+        AddHandMeshExtensions(config);
 #else
         // Either Vulkan binding extension is acceptable; the backend picks
         // whichever the runtime enabled, preferring enable2.
@@ -718,9 +739,10 @@ private:
     void ApplyGraphicsRequirements(AuroraConfig& aurora_config) {
         aurora_config.desiredBackend = kRequiredAuroraBackend;
         aurora_config.xrInterop = true;
-#if defined(__ANDROID__)
-        // Foveated rendering: fragment density maps are decided with the device. They put a flag on
-        // every render pipeline, so a session launched with foveation off does without them.
+#if !defined(_WIN32)
+        // Foveated rendering (the Quest's and desktop Linux's patched Dawn): fragment density maps
+        // are decided with the device. They put a flag on every render pipeline, so a session
+        // launched with foveation off does without them.
         aurora_config.xrFragmentDensityMap = RuntimeConfigFile::VrFoveation() != "off";
 #endif
 #if defined(_WIN32)

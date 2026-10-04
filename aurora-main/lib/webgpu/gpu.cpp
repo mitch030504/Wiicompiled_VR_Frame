@@ -830,6 +830,13 @@ bool initialize(AuroraBackend auroraBackend) {
     const int fdmOverride = android_debug::property_int("debug.wiicompiled.fdm", -1);
     fdm::request(g_backendType == wgpu::BackendType::Vulkan &&
                  (fdmOverride >= 0 ? fdmOverride == 1 : g_config.xrFragmentDensityMap));
+#elif defined(__linux__)
+    // Desktop Linux (SteamOS on the Steam Frame), with a Dawn built by Launcher/build-dawn-linux.sh.
+    // AURORA_FDM=0 or 1 overrides the settings, as debug.wiicompiled.fdm does on the Quest.
+    const char* fdmOverride = std::getenv("AURORA_FDM");
+    fdm::request(g_backendType == wgpu::BackendType::Vulkan &&
+                 (fdmOverride != nullptr && *fdmOverride != '\0' ? std::strcmp(fdmOverride, "1") == 0
+                                                                 : g_config.xrFragmentDensityMap));
 #endif
     const auto future =
         g_adapter.RequestDevice(&deviceDescriptor, wgpu::CallbackMode::WaitAnyOnly,

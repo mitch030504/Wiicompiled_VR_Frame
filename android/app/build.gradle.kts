@@ -187,7 +187,7 @@ android {
         }
         // Valve's Steam Frame, through Lepton (SteamOS's Android layer) and SteamVR's Android
         // OpenXR runtime. Its manifest (src/steamFrame) drops the Horizon OS entries, and
-        // MKW_ANDROID_HEADSET gives the runtime the Frame's defaults (runtime_config.h).
+        // MKW_HEADSET gives the runtime the Frame's defaults (runtime_config.h).
         create("steamFrame") {
             dimension = "headset"
             // Horizon OS only; src/steamFrame/AndroidManifest.xml removes the entry.
@@ -199,7 +199,7 @@ android {
                 cmake {
                     arguments += listOf(
                         "-DMKW_ANDROID_CPU=${headsetCpus.getValue("steamFrame")}",
-                        "-DMKW_ANDROID_HEADSET=steam_frame",
+                        "-DMKW_HEADSET=steam_frame",
                     )
                 }
             }

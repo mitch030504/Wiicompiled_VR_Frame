@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#if defined(MKW_ENABLE_OPENXR) && defined(_WIN32)
+#if defined(MKW_ENABLE_OPENXR) && (defined(_WIN32) || (defined(__linux__) && !defined(__ANDROID__)))
 
 // OpenXR's Vulkan structures are selected when openxr_platform.h is parsed.
 #define XR_USE_GRAPHICS_API_VULKAN
@@ -180,7 +180,11 @@ public:
         if (XR_FAILED(get(runtime.Instance(), runtime.SystemId(), &requirements))) return Fail("Vulkan requirements query failed");
         requirements_ = {requirements.minApiVersionSupported, requirements.maxApiVersionSupported};
         AuroraDawnVulkanHooks hooks{this, CreateInstance, CreateDevice, GetPhysical};
+#if defined(_WIN32)
         if (!aurora_vulkan_win32_configure(&hooks)) return Fail("PC Vulkan OpenXR requires the custom Dawn library with Aurora Vulkan ABI 1; rebuild/install it with Launcher/Build-DawnVulkan.ps1");
+#else
+        if (!aurora_vulkan_win32_configure(&hooks)) return Fail("Linux Vulkan OpenXR requires a Dawn built with Aurora's patches (Aurora Vulkan ABI 1); build it with Launcher/build-dawn-linux.sh");
+#endif
         hooks_installed_ = true;
         {
             std::lock_guard lock(submission_mutex_);
@@ -1315,4 +1319,4 @@ const std::string& OpenXRWindowsVulkanBackend::LastError() const { return m_impl
 
 } // namespace mkw::vr
 
-#endif // defined(MKW_ENABLE_OPENXR) && defined(_WIN32)
+#endif // defined(MKW_ENABLE_OPENXR) && (defined(_WIN32) || (defined(__linux__) && !defined(__ANDROID__)))

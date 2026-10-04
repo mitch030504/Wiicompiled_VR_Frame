@@ -6,8 +6,10 @@
 #include <algorithm>
 #include <bit>
 
-// AURORA_DAWN_FDM carries the ABI version of the Dawn package's patches (AuroraDawnProvider.cmake).
-#if defined(__ANDROID__) && defined(AURORA_DAWN_FDM)
+// AURORA_DAWN_FDM carries the ABI version of the Dawn package's patches (AuroraDawnProvider.cmake):
+// the Quest's (android/Build-QuestDawn.ps1) or desktop Linux's (Launcher/build-dawn-linux.sh), both
+// linked statically.
+#if (defined(__ANDROID__) || defined(__linux__)) && defined(AURORA_DAWN_FDM)
 #include <aurora/dawn_fdm_abi.h>
 static_assert(AURORA_DAWN_FDM == AURORA_DAWN_FDM_ABI,
               "The Dawn package's fragment density map ABI does not match include/aurora/dawn_fdm_abi.h");
@@ -53,7 +55,7 @@ void device_created() noexcept {
 #else
   if (g_requested) {
     Log.warn("Fragment density maps: unavailable; this build links a Dawn without Aurora's patches "
-             "(android/Build-QuestDawn.ps1)");
+             "(android/Build-QuestDawn.ps1, Launcher/build-dawn-linux.sh)");
   }
 #endif
 }

@@ -2,7 +2,9 @@
 
 #pragma once
 
-#if defined(MKW_ENABLE_OPENXR) && defined(_WIN32)
+// Despite the name, also the desktop Linux backend (SteamOS on the Steam Frame): nothing in it is
+// Windows-specific. The Quest has its own two-device backend (openxr_vulkan.h).
+#if defined(MKW_ENABLE_OPENXR) && (defined(_WIN32) || (defined(__linux__) && !defined(__ANDROID__)))
 
 #include "vr/openxr_backend.h"
 #include "vr/openxr_runtime.h"
@@ -112,4 +114,4 @@ private:
 
 } // namespace mkw::vr
 
-#endif // defined(MKW_ENABLE_OPENXR) && defined(_WIN32)
+#endif // defined(MKW_ENABLE_OPENXR) && (defined(_WIN32) || (defined(__linux__) && !defined(__ANDROID__)))

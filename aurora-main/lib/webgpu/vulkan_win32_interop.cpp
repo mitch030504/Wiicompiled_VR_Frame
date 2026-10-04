@@ -4,8 +4,27 @@
 #include "../stereo.hpp"
 #include "../stereo_overlay.hpp"
 #include "gpu.hpp"
-#if defined(_WIN32) && defined(WEBGPU_DAWN) && defined(DAWN_ENABLE_BACKEND_VULKAN)
+// Windows loads the patched webgpu_dawn.dll's exports at run time. Desktop Linux (SteamOS on the
+// Steam Frame) links Dawn statically, so there the bridge exists only against a package built with
+// the hooks (AURORA_DAWN_VULKAN_HOOKS, from its aurora-dawn.json) and calls them directly.
+#if defined(WEBGPU_DAWN) && defined(DAWN_ENABLE_BACKEND_VULKAN) && \
+    (defined(_WIN32) || (defined(__linux__) && !defined(__ANDROID__) && defined(AURORA_DAWN_VULKAN_HOOKS)))
+#if defined(_WIN32)
 #include <windows.h>
+#else
+static_assert(AURORA_DAWN_VULKAN_HOOKS == AURORA_DAWN_VULKAN_ABI,
+              "The Dawn package's Vulkan hook ABI does not match include/aurora/dawn_vulkan_abi.h");
+extern "C" {
+uint32_t AuroraDawnVulkanVersion(void);
+int AuroraDawnVulkanConfigure(const AuroraDawnVulkanHooks* hooks);
+int AuroraDawnVulkanGetHandles(void* device, AuroraDawnVulkanHandles* handles);
+void* AuroraDawnVulkanWrap(void* device, const void* textureDescriptor, uint64_t image);
+int AuroraDawnVulkanRelease(void* device, void* const* textures, uint32_t count);
+void* AuroraDawnVulkanLock(void* device);
+void AuroraDawnVulkanUnlock(void* guard);
+int AuroraDawnVulkanDrain(void* device);
+}
+#endif
 #include <algorithm>
 #include <array>
 #include <memory>
@@ -23,6 +42,17 @@ struct Api {
   AuroraDawnVulkanUnlockFn unlock = nullptr;
   AuroraDawnVulkanDrainFn drain = nullptr;
   bool Load() {
+#if !defined(_WIN32)
+    if (AuroraDawnVulkanVersion() != AURORA_DAWN_VULKAN_ABI) return false;
+    configure = &AuroraDawnVulkanConfigure;
+    handles = &AuroraDawnVulkanGetHandles;
+    wrap = &AuroraDawnVulkanWrap;
+    release = &AuroraDawnVulkanRelease;
+    lock = &AuroraDawnVulkanLock;
+    unlock = &AuroraDawnVulkanUnlock;
+    drain = &AuroraDawnVulkanDrain;
+    return true;
+#else
     HMODULE module = GetModuleHandleW(L"webgpu_dawn.dll");
     if (!module) return false;
     auto version = reinterpret_cast<AuroraDawnVulkanVersionFn>(GetProcAddress(module, "AuroraDawnVulkanVersion"));
@@ -37,6 +67,7 @@ struct Api {
     LOAD(drain, AuroraDawnVulkanDrainFn, "AuroraDawnVulkanDrain");
 #undef LOAD
     return true;
+#endif
   }
 } api;
 int64_t VkFormat(wgpu::TextureFormat format) {
@@ -222,8 +253,9 @@ void* aurora_vulkan_win32_lock_queue() {
 void aurora_vulkan_win32_unlock_queue(void* guard) { aurora::vulkan_win32::api.unlock(guard); }
 #else
 // C ABI stubs keep the runtime's OpenXR integration linkable on Windows GX
-// builds whose Dawn has no Vulkan backend; the backend then reports that the
-// bridge is unavailable and the game falls back to the desktop renderer.
+// builds whose Dawn has no Vulkan backend, and on Linux against a Dawn without
+// Aurora's hooks; the backend then reports that the bridge is unavailable and
+// the game falls back to the desktop renderer.
 bool aurora_vulkan_win32_configure(const AuroraDawnVulkanHooks*) { return false; }
 bool aurora_vulkan_win32_get_handles(AuroraDawnVulkanHandles* handles, int64_t* format) {
   if (handles) *handles = {};

@@ -22,7 +22,7 @@ to a single shared device first.
 | | Quest flavours | `steamFrame` |
 | --- | --- | --- |
 | CPU target (`kit.json` `androidCpu`) | `cortex-a77` (`kryo` on Quest 1) | `cortex-x4` |
-| `MKW_ANDROID_HEADSET` | `quest` | `steam_frame` (defines `MKW_HEADSET_STEAM_FRAME`) |
+| `MKW_HEADSET` | empty | `steam_frame` (defines `MKW_HEADSET_STEAM_FRAME`) |
 | Library entry | `LauncherActivity` (Quest 1: `QuestActivity`) | `FrameEntryActivity` |
 | Horizon OS manifest entries | present | removed |
 | `[vr] refresh_rate` default | `0` (the headset's own) | `120` |
