@@ -155,9 +155,10 @@ below:
 | --- | --- | --- |
 | Page size | 4096 | 4096 |
 | CPU | 8 cores; `sve sve2 svei8mm svebf16 sveaes svepmull svebitperm svesha3 svesm4 i8mm bf16 bti paca pacg ...` | the same |
-| Android | — | 11 (API 30), `ro.product.model` Lepton, device `lepton_arm64_only`, platform `waydroid` |
+| Android | — | 11 (API 30, LineageOS), `ro.product.model` Lepton, device `lepton_arm64_only`, platform `waydroid`, `ro.steam.running_in_app_container=true` |
 | Vulkan driver | — | `ro.hardware.vulkan=freedreno`: Mesa's Turnip, not Qualcomm's driver |
-| OpenXR runtime | SteamVR, `bin/linuxarm64/vrclient.so` (`~/.config/openxr/1/active_runtime.json`) | no package named for XR, Valve, Steam or Khronos |
+| OpenXR runtime | SteamVR, `bin/linuxarm64/vrclient.so` (`~/.config/openxr/1/active_runtime.json`); SteamOS ships the SDK headers, `libopenxr_loader.a` and `openxr.pc` | `/vendor/etc/openxr/1/active_runtime.json`, from the host's `/usr/share/guestos/android/vendor/etc/openxr`; no runtime broker package |
+| Implicit OpenXR layers | `XrApiLayer_VALVE_fdm_injection` (also listed as explicit) | `XrApiLayer_VALVE_fdm_injection` |
 
 What follows from them:
 
@@ -170,8 +171,17 @@ What follows from them:
   stays on (it is correct either way); `debug.wiicompiled.vtxpad 0` can check whether Turnip needs it.
 - **Open:** whether Turnip in Lepton imports AHardwareBuffers and sync fds is in the `vkjson`
   extension list, still to read.
-- **Open:** how an app inside Lepton reaches SteamVR's OpenXR runtime. No broker package shows up,
-  so the Khronos loader's runtime broker may be provided some other way.
+- **Finding the runtime.** An app inside Lepton reaches SteamVR's OpenXR runtime through the system
+  runtime file, not a broker. The Khronos loader the game links statically (`DYNAMIC_LOADER OFF`)
+  tries the runtime brokers first, then reads `/{product,odm,oem,vendor,system}/etc/openxr/1/active_runtime.json`,
+  so no app change is needed; the manifest's broker queries are simply unused here. Walkabout Mini
+  Golf, an Android VR game, runs in the same Lepton.
+- **Valve's foveation layer.** `XrApiLayer_VALVE_fdm_injection` is implicit, so it wraps every
+  Android OpenXR app. By its name it adds fragment density maps to apps' own render passes. This
+  game draws its eyes on Dawn's device and only copies them into the swapchain on the OpenXR
+  device, so the layer has no render pass of the game's to change; the game's own maps
+  (eye-tracked foveation, above) do that. If the layer gets in the way, its JSON names the
+  environment variable that disables it.
 
 ## Device checklist
 
