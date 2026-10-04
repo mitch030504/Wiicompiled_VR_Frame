@@ -45,7 +45,7 @@ started with the `podman` SteamOS already ships. Over SSH (`ssh steamos@<frame-i
 
 ```bash
 mkdir -p ~/wiicompiled && cd ~/wiicompiled
-git clone -b claude/peaceful-keller-2ek99b https://github.com/mitch030504/Wiicompiled_VR_Frame.git
+git clone https://github.com/mitch030504/Wiicompiled_VR_Frame.git
 podman run -it --name wiicompiled-build -v ~/wiicompiled:/work:Z docker.io/library/debian:trixie bash
 ```
 
@@ -81,10 +81,52 @@ SteamOS's, so the binary runs on SteamOS outside the container. If CMake reports
 install its `-dev` package in the container and run the same command again; both scripts resume
 where they stopped.
 
+### Building it on a Linux PC
+
+The same container runs on an x86_64 Linux PC as an emulated ARM64 one, which spares the Frame's
+storage and battery; the result is copied over. Emulation makes it several times slower: the
+first Dawn build takes hours. On the PC (these commands also work in fish):
+
+```bash
+sudo pacman -S --needed podman qemu-user-static qemu-user-static-binfmt   # Arch, CachyOS
+sudo systemctl restart systemd-binfmt
+podman run --rm --platform linux/arm64 docker.io/library/debian:trixie uname -m   # prints aarch64
+```
+
+Other distributions name the packages differently (on Debian and Ubuntu: `podman
+qemu-user-static binfmt-support`). If rootless podman complains about subordinate ids, run
+`sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 $USER` and log in again.
+
+Extract your disc image with [nodtool](https://github.com/encounter/nod), the extractor the
+installer uses, and put the two files the build reads into `Assets/`:
+
+```bash
+mkdir -p ~/wiicompiled; cd ~/wiicompiled
+git clone https://github.com/mitch030504/Wiicompiled_VR_Frame.git
+curl -fL -o nodtool https://github.com/encounter/nod/releases/download/v2.0.0-alpha.10/nodtool-linux-x86_64
+chmod +x nodtool
+./nodtool extract "/path/to/Mario Kart Wii.wbfs" disc-extract
+mkdir -p Wiicompiled_VR_Frame/Assets
+cp disc-extract/sys/main.dol disc-extract/files/rel/StaticR.rel Wiicompiled_VR_Frame/Assets/
+podman run -it --name wiicompiled-frame --platform linux/arm64 -v ~/wiicompiled:/work docker.io/library/debian:trixie bash
+```
+
+Inside the container, run the commands of [Building it on the Frame](#building-it-on-the-frame)
+from `apt-get` on, skipping the `cp` into `Assets/`, which is done. `podman start -ai
+wiicompiled-frame` gets back into it; set `T` again before resuming. Then copy the game and the
+extracted disc to the Frame:
+
+```bash
+ssh steamos@<frame-ip> mkdir -p wiicompiled
+scp -r ~/wiicompiled/out steamos@<frame-ip>:wiicompiled/
+scp -r ~/wiicompiled/disc-extract steamos@<frame-ip>:wiicompiled/disc
+```
+
 ### Running it
 
 The game reads its `Config.toml` from `~/.local/share/WiiCompiled/` on SteamOS (it is created on the first start): set
-`[paths] dvd_root` there to your extracted disc (the directory holding `sys/` and `files/`). Start
+`[paths] dvd_root` there to your extracted disc (the directory holding `sys/` and `files/`;
+`/home/steamos/wiicompiled/disc` when it was copied as above). Start
 SteamVR on the Frame, then start `~/wiicompiled/out/WiiCompiled`, from Desktop Mode or as a
 non-Steam game added to the library. The run log is in `Logs/` next to `Config.toml`; it should show,
 in order:

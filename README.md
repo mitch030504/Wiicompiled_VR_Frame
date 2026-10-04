@@ -1,263 +1,147 @@
 <img width="4190" height="2464" alt="Mario Kart WiiCompiled VR logo (logo by Inkwreck)" src="docs/images/wiicompiled-vr-logo.png" />
 
-# WiiCompiled OpenXR VR
+# WiiCompiled VR for the Steam Frame
 
 <p align="center">
-  <a href="https://github.com/patchzyy/Wiicompiled/releases"><img alt="Windows 10 / 11, x64" src="https://img.shields.io/badge/Windows-10%20%2F%2011%20%C2%B7%20x64-0078D4"></a>
-  <a href="https://github.com/patchzyy/Wiicompiled/releases"><img alt="Linux, x64 / ARM64" src="https://img.shields.io/badge/Linux-x64%20%2F%20ARM64-FCC624?logo=linux&amp;logoColor=white"></a>
-  <a href="https://github.com/patchzyy/Wiicompiled/releases"><img alt="macOS 14+, Apple Silicon" src="https://img.shields.io/badge/macOS-14%2B%20%C2%B7%20Apple%20Silicon-0A84FF?logo=apple&amp;logoColor=white"></a>
-</p>
-<p align="center">
-  <a href="#building-from-source"><img alt="PowerPC static recompilation" src="https://img.shields.io/badge/PowerPC-static%20recompilation-FF9F0A"></a>
-  <a href="#retro-rewind"><img alt="Retro Rewind supported" src="https://img.shields.io/badge/Retro%20Rewind-supported-FF375F"></a>
-  <a href="https://github.com/TeamWheelWizard/WheelWizard/releases"><img alt="Install with Wheel Wizard" src="https://img.shields.io/badge/install%20with-Wheel%20Wizard-8B5CF6"></a>
+  <img alt="Steam Frame, SteamOS ARM64" src="https://img.shields.io/badge/Steam%20Frame-SteamOS%20%C2%B7%20ARM64-1A9FFF?logo=steam&amp;logoColor=white">
+  <img alt="Status: untested on the headset" src="https://img.shields.io/badge/status-untested%20on%20the%20headset-FF9F0A">
+  <a href="https://github.com/iChris4/Wiicompiled_VR"><img alt="Fork of WiiCompiled OpenXR VR" src="https://img.shields.io/badge/fork%20of-WiiCompiled%20OpenXR%20VR-8B5CF6"></a>
   <a href="LICENSE"><img alt="License: GPLv3" src="https://img.shields.io/badge/license-GPLv3-2EA44F?logo=gnu&amp;logoColor=white"></a>
 </p>
 
-A native PC port of Mario Kart Wii, made with static recompilation.
-
-There's no emulator in the loop, no interpreter, no JIT, no PowerPC
-anywhere at runtime.
+Mario Kart Wii in VR on Valve's Steam Frame, running natively on SteamOS: a fork of
+[WiiCompiled OpenXR VR](https://github.com/iChris4/Wiicompiled_VR) (itself built on
+[WiiCompiled](https://github.com/patchzyy/Wiicompiled)), the static recompilation of Mario Kart Wii
+to native code. There is no emulator, interpreter or JIT at runtime: your own disc is translated to
+C++ and compiled for the Frame's ARM64 CPU, and it renders through SteamVR's OpenXR runtime.
 
 > [!IMPORTANT]
-> There is no Nintendo code, no assets and no game data anywhere in this project or its releases.
-> You need your own legally dumped copy of the PAL version of the game. Setup only ships the
-> toolchain, the translation runs on your machine against your disc image, and nothing ever gets
-> uploaded.
+> There is no Nintendo code, no assets and no game data anywhere in this project. You need your
+> own legally dumped copy of the PAL version of the game; the translation runs on your machine
+> against your disc image, and nothing is uploaded.
 
-[Download WheelWizard VR](https://github.com/iChris4/WheelWizard_VR/releases/latest)
+> [!WARNING]
+> **Not yet run on a Steam Frame.** The Frame build compiles and its unit tests pass, but nobody
+> has played it on the headset yet. Expect it to fail in ways only the device shows; reports with
+> the run log are what moves it forward (see [Reporting problems](#reporting-problems)).
 
 ---
 
-## What it does
+## What this fork adds
 
-**Unlocked framerate with interpolation.** 
-The original game is hard-locked to 60 fps. The runtime can generate interpolated frames in between, so on a
-120/144 Hz monitor things genuinely look smoother.
+Everything below is in [`docs/steam-frame.md`](docs/steam-frame.md), with the reasoning and the
+readings it is based on.
 
-> [!WARNING]
-> Interpolation is experimental right now and will show artifacts in specific scenarios.
+- **A native SteamOS build.** The game links SteamVR's OpenXR runtime directly and lets it create
+  the GPU device it renders with, so each eye is copied straight into the headset's swapchain with
+  no second device and no sharing between them. It runs fullscreen in the headset only; there is
+  no desktop window to draw.
+- **Built for the Frame's Snapdragon 8 Gen 3**: compiled with `-mcpu=cortex-x4`.
+- **The Frame's controllers.** Its own interaction profile is bound, so beside what the Quest Touch
+  layout already does, the left D-pad is the Wii Remote's D-pad (tricks, menus), the left View
+  button pauses and the left shoulder opens the settings panel.
+- **120 Hz.** The headset is asked for 120 Hz, exactly two display refreshes per game frame at the
+  game's 60 FPS, so motion is even. `[vr] refresh_rate` changes it.
+- **Eye-tracked foveation.** Variable-resolution rendering whose sharp centre follows your gaze
+  through the Frame's eye tracking, instead of staying fixed straight ahead. `[vr] foveation` sets
+  the strength and `[vr] eye_tracked_foveation` turns the tracking off.
+- **Standalone defaults**: 0.8 render scale, the game's own object culling and medium foveation,
+  as on the Quest, sized for a mobile GPU driving 2160x2160 per eye.
+- **Build tooling.** `Launcher/build-dawn-linux.sh` builds the patched Dawn (Aurora's WebGPU
+  layer) the VR backend needs, and `Launcher/local-build.sh` gained `--openxr`, `--dawn-package`,
+  `--headset steam_frame` and `--cpu`.
 
-**Any aspect ratio you want.** 
-Drag the window bigger, wider, whatever, the camera adjusts
-live.
-
-**Native rendering via aurora.** 
-The graphics layer is built on
-[aurora](https://github.com/encounter/aurora). Aurora is a source-level GameCube & Wii compatibility layer.
-
-**High internal resolution.** 
-Play at several times the console's resolution.
-
-**Experimental OpenXR VR.**
-Windows builds can render through an OpenXR runtime on D3D12, or on Vulkan with a custom Dawn
-build, without CPU readback. Menus and
-unsupported scenes appear as a head-locked virtual screen; a validated single-camera race switches
-to immersive stereo rendering. VR is opt-in and falls back to the normal desktop renderer if the
-runtime or headset is unavailable. In first person you sit in the cockpit, where the steering wheel
-or handlebar turns with your steering, and hand steering by heurazy lets you grab it with the
-tracked controllers and turn it. On a Quest the hands can follow the headset's own hand tracking.
-A native SteamOS build for the Steam Frame (not yet tested on the headset) adds the Frame controllers'
-D-pad, a 120 Hz display for the game's 60 FPS, and foveation that follows your eyes; see
-[`docs/steam-frame.md`](docs/steam-frame.md).
-See [`OPENXR.md`](OPENXR.md) for setup, configuration, and the current limitations.
-
-**Music ducking.** 
-Start playing something else, Spotify, a YouTube video, and
-the game automatically mutes its own music until the other audio stops. Optional, if you'd
-rather it didn't. All audio that shows in your display media controls on your windows pc fall under this.
-
-**An in-game settings bar.** 
-Press **F10** while the game window has focus:
-- Internal resolution
-- FPS counter
-- Controller assignment for all four ports
-- Full per-controller button mapping, including the bumpers
-- Dolphin-syntax input expressions and GCPadNew.ini import
-- Controller vibration on/off
-- Volume, instant mute, and the music ducking toggle
-
-Everything you change is saved to `Config.toml` on the spot and restored next launch.
-
-**Dolphin-compatible input expressions.** 
-Each GameCube control can carry an expression in Dolphin's input syntax, with the same operators
-and the same functions.
-A Dolphin `GCPadNew.ini` can be imported directly from the F10 bar.
-
-**Vibration toggle.** 
-Force feedback can be turned off for every port at once.
-The official Wii U / Switch GameCube adapter (WUP-028) works too; as with Dolphin, on Windows the
-adapter must be switched to the WinUSB driver once (Zadig).
-
-**Real Wii Remotes over Bluetooth.**
-Pair a Wii Remote with Windows (Settings > Bluetooth > Add device, press 1+2 or SYNC, leave the
-PIN empty)
-
-Known limitations of the Wii Remote path:
-- No IR pointer yet: menus are navigated with the D-pad and A (the game treats the remote as
-  pointing away from the screen).
-- Battery level is not reported to the game and the remote's speaker is not implemented.
-- Only the Wii Remote's own accelerometer is calibrated; the Nunchuk's uses SDL's fixed zero point.
-- The Classic Controller's L/R triggers reach the game as digital (full pull on click): SDL does not
-  expose their analog travel.
-- Turn the Wii Remote support off in that menu if you use a Mayflash DolphinBar, which already
-  presents the remote as a regular gamepad.
-
-**USB steering wheels and pedals.**
-Ported from heurazy's [mario-kart-wii-VR-port](https://github.com/heurazy/mario-kart-wii-VR-port).
-Open **F10 > Controllers > USB wheel and pedals (player 1)**; it is also in the headset's settings
-panel. Pick the steering device and axis and record full left, full right and centre, then each
-pedal's released and fully pressed positions. Assign the right paddle to drift and the left paddle to
-items; trick, confirm, pause and back are optional. Any wheel SDL sees as a joystick works this way,
-with no gamepad mapping: separate USB pedals, reversed axes and combined pedal axes (select the same
-axis for both pedals) all calibrate the same. The settings are saved in `PhysicalWheel.toml` beside
-`Config.toml`.
-
-The wheel is player 1's GameCube controller. Press its confirm button at the title screen so the game
-uses a GameCube controller; its D-pad, confirm and back then work the menus. In a race it owns
-steering and the pedals. The brake pedal brakes, then reverses, and beats the accelerator and drift.
-In VR, the cockpit's wheel turns with it and hand steering steps aside. Setting the VR controllers to
-**Gamepad** keeps them for menus, pause and item aiming alongside the wheel. Light vibration is
-optional, off by default, capped at 15 % and follows the game's own rumble. No centering spring or
-steering force is requested.
-
-Logitech wheels (G29, G920, G923, G27, G25, Driving Force GT, PRO Racing Wheel) are recognised by SDL
-as wheels and marked "(wheel)" in the device list. This has not been tried on a physical wheel yet:
-- Install Logitech G HUB (Logitech Gaming Software for a G27 or G25). Without the driver a Logitech
-  wheel starts in a compatibility mode, typically with a smaller rotation range and both pedals on
-  one axis. A G920 or G923 for Xbox also starts as an Xbox controller, which the game would read as
-  an ordinary pad.
-- Set a G29's mode switch to PS3 on PC.
-- Full lock is wherever you record full left and right. Recording them a quarter turn each way
-  (90°) matches the VR cockpit's wheel, or lower the operating range in G HUB.
-- A Driving Force Shifter's gears reach the game as buttons of the wheel and can be assigned like
-  any other. A gear stays pressed while it is engaged: on the item button it keeps the item held
-  behind you until you shift back to neutral. The clutch is not used.
-- Turn on the centering spring in G HUB if you want the wheel to self-centre.
+The Steam Frame also runs Android apps through its Lepton layer, and the Quest app gained a
+`steamFrame` flavour for it, but it cannot show a picture there: Lepton's graphics driver lacks
+the memory-sharing extensions the Android backend needs. The native build is the way to play.
 
 ## Requirements
 
-- Windows 10 or 11, 64-bit
-- GPU: GTX 1650 / RX 6400 / Arc A310 or higher
-- CPU: Intel Core i5-8400 / AMD Ryzen 5 2600 (4c/6c, ~3.5GHz+) or higher
-- About 20 GB of free disk space during installation (Final game size ~5 GB)
-- This fork's packaged release supports Windows x64. Other platforms are not release targets.
+- A Steam Frame with SteamVR, reachable over SSH (`ssh steamos@<frame-ip>`).
 - A clean, unmodified **PAL `RMCP01`** disc image of Mario Kart Wii, dumped by you. ISO, GCM,
-  GCZ, CISO, WBFS, WIA and RVZ are accepted.
-
-> [!NOTE]
-> GPU/CPU minimums are set by driver support and D3D12/Vulkan feature requirements, not by the game's actual demands.
-
-Only the clean PAL revision will work. Anything else (other
-regions, patched executables) is rejected outright.
+  GCZ, CISO, WBFS, WIA and RVZ can all be extracted. Other regions and patched executables are
+  rejected.
+- Somewhere to build. Either:
+  - **an x86_64 Linux PC** with podman and qemu: it builds in an emulated ARM64 container, which is
+    slow (the first build takes hours) but spares the Frame; or
+  - **the Frame itself**, in a podman container there.
+- Several GB of free disk space for the toolchain, Dawn and the game.
 
 > [!NOTE]
 > Nobody here will tell you where to get the game. Dumping your own disc is on you, and links to
 > game files won't be provided or tolerated.
 
-## Installing
+## Building and installing
 
-Use [WheelWizard VR](https://github.com/iChris4/WheelWizard_VR/releases/latest). Select your clean PAL
-`RMCP01` image in Settings, then open **Settings → Other → WiiCompiled (beta)** and enable
-**Enable WiiCompiled OpenXR VR (beta)**. Press Install on Home. Installation builds both Base game
-and Retro Rewind locally using the bundled toolchain; a developer toolchain is not required.
+The commands are in [`docs/steam-frame.md`](docs/steam-frame.md): [Building it on a Linux
+PC](docs/steam-frame.md#building-it-on-a-linux-pc) or [Building it on the
+Frame](docs/steam-frame.md#building-it-on-the-frame). In short:
 
-Home lets you choose **Base game** or **Retro Rewind**. The normal WiiCompiled switch selects the
-original backend; turning both switches off selects Dolphin. Only one recompilation switch can
-be enabled at a time. VR uses a separate `RecompVR` installation beside the normal `Recomp` folder.
-Saves and Miis use the normal installation's effective NAND; Retro Rewind retains its separate
-XML-directed saves and ghosts. Graphics, VR preferences, caches, and compiled binaries stay separate.
-Uninstalling either backend in WheelWizard VR preserves configuration and shared progress.
+1. Extract your disc with [nodtool](https://github.com/encounter/nod) and copy `sys/main.dol` and
+   `files/rel/StaticR.rel` into `Assets/`.
+2. Start a Debian trixie ARM64 container and install the build packages, the bundled clang 22,
+   CMake and Ninja (`Launcher/prepare-portable-tools.sh --arch aarch64`), and .NET 8.
+3. Build the patched Dawn: `Launcher/build-dawn-linux.sh`.
+4. Build the game: `Launcher/local-build.sh ... --openxr --dawn-package <dawn>/package --headset steam_frame`.
+5. Copy the output and the extracted disc to the Frame, set `[paths] dvd_root` in
+   `~/.local/share/WiiCompiled/Config.toml`, start SteamVR, then start `WiiCompiled`.
 
-Managed VR launches enable OpenXR with D3D12; the Vulkan binding is opt-in through
-`video.graphics_api` (see [OPENXR.md](OPENXR.md)). If the runtime or headset is unavailable, the game
-continues on the desktop and displays the failure briefly; **F10 → VR** retains the explanation.
-See [OpenXR configuration](OPENXR.md) and [distribution and validation](DISTRIBUTION.md).
+## Reporting problems
 
+Open an issue on this repository with the run log from `~/.local/share/WiiCompiled/Logs/` on the
+Frame, or the last lines of the failing build step. [Running
+it](docs/steam-frame.md#running-it) lists the log lines a working start shows, in order; the
+first one missing says where it stopped.
 
-> [!CAUTION]
-> Only take builds from this repository's
-> [Releases](https://github.com/iChris4/Wiicompiled_VR/releases) page. If someone's sharing an
-> installer through Discord or some random download site, don't touch it!!
+Problems that also happen on a PC or a Quest belong upstream, in
+[WiiCompiled OpenXR VR](https://github.com/iChris4/Wiicompiled_VR).
+
+## From upstream
+
+The fork keeps everything [WiiCompiled OpenXR VR](https://github.com/iChris4/Wiicompiled_VR) does;
+its README covers it in full. In the headset that means:
+
+- Menus and unsupported scenes on a head-locked virtual screen, and races in immersive stereo.
+- A first-person cockpit whose steering wheel or handlebar turns with your steering, and hand
+  steering by heurazy: grab the wheel with the tracked controllers and turn it.
+- The settings panel in the headset (render scale, foveation, refresh rate, controls), saved to
+  `Config.toml` on the spot.
+- Physics identical to the original game, proven by ghosts that sync across Wii, Dolphin and
+  WiiCompiled.
+- [Retro Rewind](https://wiki.tockdom.com/wiki/Retro_Rewind) as its own statically translated
+  profile.
+
+The PC (Windows D3D12 and Vulkan) and Meta Quest builds are still here and unchanged; see
+[`OPENXR.md`](OPENXR.md) and [`docs/quest-port.md`](docs/quest-port.md). For those, use upstream's
+[WheelWizard VR](https://github.com/iChris4/WheelWizard_VR/releases/latest) instead of this fork.
 
 ## A note on related projects
 
-WiiCompiled, Wheel Wizard, Retro rewind and other related projects are developed
-**independently** and each has its **own** contribution rules and all have their own
-rules. What applies here does not automatically apply there,
-and vice versa. Check each project's own CONTRIBUTING and README files.
-
-## Retro Rewind
-
-[Retro Rewind](https://wiki.tockdom.com/wiki/Retro_Rewind), ZPL's Mario Kart Wii mod distribution,
-can be built as its **own static profile**: instead of applying `Code.pul` as runtime patches,
-the Kamek/Pulsar code is statically translated together with the base game into a separate native
-executable.
-
-Wheel Wizard drives this too.
-
-## Building from source
-
-Owning the game is still required even if you compile everything yourself.
-
-You'll need: .NET 8 SDK, CMake, Ninja, and LLVM/Clang (the shipped build uses LLVM-MinGW targeting
-`x86-64-v3`).
-
-Build the translator:
-
-```powershell
-dotnet build translator/Translator.sln -c Release
-```
-
-The default test suite needs no binaries and no host C++ compiler, so you can hack on the
-translator without any game data around.
-
-For everything beyond that, feeding in your own `main.dol`/`StaticR.rel`, running the
-translation, generating the manifest and build graph, and compiling, see [`translator/README.md`](translator/README.md).
-
-For a step-by-step guide on compiling both WiiCompiled and Retro Rewind from source on macOS (Apple Silicon), see the [macOS Build Guide](docs/building-macos.md).
+WiiCompiled, WiiCompiled OpenXR VR, Wheel Wizard, Retro Rewind and this fork are developed
+**independently**, each with its **own** rules. What applies here does not automatically apply
+there, and vice versa. Check each project's own CONTRIBUTING and README files.
 
 ## FAQ
 
 **Is this an emulator?**
-No. Everything is compiled to native code before you ever press play. At runtime there's nothing
-emulating a Wii CPU or GPU.
+No. Everything is compiled to native ARM64 code before you press play. At runtime nothing emulates
+a Wii CPU or GPU.
 
-**Do you provide the game?**
-No. Don't ask. Nothing in this repo or any release contains Nintendo code or assets.
-
-**Why does setup take so long?**
-Because we **don't** ship the translated binary, most other recomp projects do, but we
-don't want to risk it right now, setup has to run a static recompiler over the whole game
-and then throw a C++ compiler at the result. It's a **one-time cost** on your machine.
+**Do you provide the game, or a ready-built binary?**
+No. Nothing in this repo contains Nintendo code or assets, and the translated game is never
+shipped: it is built from your own disc, a one-time cost on your machine.
 
 **Which game version works?**
-Clean PAL `RMCP01`. Other regions and modified executables are **rejected**. Translating
-them against the wrong manifest would give you a subtly broken game that's miserable to debug for us.
+Clean PAL `RMCP01`. Other regions and modified executables are **rejected**.
 
-**Can I recompile other GameCube/Wii games with it?**
-The translator itself handles DOLs and RELs generically, see
-`projects/examples/generic-dol.yml`. The catch is that a *playable* port also needs a runtime:
-audio, input, GX, everything the game touches.
+**Why not install the Quest APK on the Frame?**
+The Frame runs it in Lepton, whose graphics driver cannot share images between the two GPU devices
+the Android backend uses, so it shows nothing. The native build uses one device and needs no
+sharing.
 
-**The game crashed / stopped with an error.**
-Errors are deliberately loud instead of quietly swallowed. Send a report along with the run log
-from `%LOCALAPPDATA%\WiiCompiled\Logs`.
-
-**Will you fix original bugs?**
-Not in the base game, behavior identical to real hardware is the goal. Only report things where this port differs
-from the original game. As for Retro Rewind, some base-game behavior **is** patched, so if it differs from the
-base game, that's normal. If Retro Rewind behavior differs between Dolphin/Wii and WiiCompiled, open an issue on GitHub.
-
-**How accurate are the physics?**
-100% - this is proven by in-game ghosts. Since ghosts are replay files based on inputs rather
-than tracked positions, matching ghosts prove the physics match across Dolphin/Wii/WiiCompiled.
-
-**Is it done?**
-Not fully. The game is in a state where everything should be playable and the physics do match
-100% with the original game, but compatibility, rendering, networking and performance are all
-actively being worked on. If you do find an issue, we strongly encourage you to open one on
-GitHub so we can take a look at it.
+**Can it run on other SteamOS or Linux ARM64 devices?**
+Leave out `--headset steam_frame` and pass `--cpu` for your CPU to get a generic Linux VR build;
+it needs an OpenXR runtime with `XR_KHR_vulkan_enable2`. Untested.
 
 ## AI usage
 AI coding tools were used during development of this project. 
@@ -271,6 +155,9 @@ All translated output is verified against real hardware behavior and most import
   aurora's Direct3D, Vulkan and OpenGL backends.
 - **[OpenXR](https://www.khronos.org/openxr/)** - the Khronos cross-platform API used by the
   experimental VR renderer.
+- **[WiiCompiled OpenXR VR](https://github.com/iChris4/Wiicompiled_VR)** by iChris4 and
+  **[WiiCompiled](https://github.com/patchzyy/Wiicompiled)** by patchzyy - the projects this fork
+  is built on.
 - **heurazy** - the VR cockpit's turning steering wheel and hand steering, ported from
   **[mario-kart-wii-VR-port](https://github.com/heurazy/mario-kart-wii-VR-port)** (GPL-3.0).
 - **[Dolphin Emulator](https://github.com/dolphin-emu/dolphin)** - an invaluable reference for Wii
@@ -280,6 +167,9 @@ All translated output is verified against real hardware behavior and most import
   distribution this project supports.
 - **[Wheel Wizard](https://github.com/TeamWheelWizard/WheelWizard)** - the mod manager this
   project integrates with as a launch backend.
+- **[nod](https://github.com/encounter/nod)** - nodtool, the disc image extractor.
+- **[DolphinXR](https://github.com/iChris4/dolphinXR)** - the Steam Frame controller profile's
+  input paths.
 - Everyone in the static recompilation community.
 
 Bundled third-party components and their licenses live in
