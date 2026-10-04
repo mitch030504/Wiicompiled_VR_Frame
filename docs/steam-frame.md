@@ -147,16 +147,18 @@ Steam's own sideloading) is to be confirmed on the device.
 
 ## Device checklist
 
-Information to collect first, from the build PC over Lepton's adb port, with an Android app running
-on the Frame:
+Information to collect first, from any PC over Lepton's adb port (the commands work in bash, zsh and
+fish; in PowerShell only the adb lines do), with an Android app running on the Frame:
 
-```powershell
+```sh
 adb connect <frame-ip>:5555
-$f = "<frame-ip>:5555"
-adb -s $f shell "getprop ro.build.version.release; getprop ro.build.version.sdk; getprop ro.product.manufacturer; getprop ro.product.model; getprop ro.product.device; getprop ro.hardware.vulkan; getprop ro.board.platform"
-adb -s $f shell "uname -a; getconf PAGE_SIZE; grep -m1 Features /proc/cpuinfo; grep -c processor /proc/cpuinfo"
-adb -s $f shell cmd gpu vkjson > frame-vkjson.json
-adb -s $f shell "pm list packages | grep -i -E 'xr|valve|steam|khronos|openxr'"
+adb -s <frame-ip>:5555 shell 'getprop ro.build.version.release; getprop ro.build.version.sdk; getprop ro.product.manufacturer; getprop ro.product.model; getprop ro.product.device; getprop ro.hardware.vulkan; getprop ro.board.platform'
+adb -s <frame-ip>:5555 shell 'uname -a; getconf PAGE_SIZE; grep -m1 Features /proc/cpuinfo; grep -c processor /proc/cpuinfo'
+adb -s <frame-ip>:5555 shell cmd gpu vkjson > frame-vkjson.json
+adb -s <frame-ip>:5555 shell "pm list packages | grep -i -E 'xr|valve|steam|khronos|openxr'"
+# The parts of frame-vkjson.json that matter:
+grep -oE '"(deviceName|driverName|driverInfo|apiVersion|driverVersion)": *[^,]*' frame-vkjson.json | sort -u
+grep -oE '"extensionName": *"[^"]*"' frame-vkjson.json | grep -iE 'hardware_buffer|external_semaphore|external_fence|external_memory|fragment_density|shading_rate|dynamic_rendering' | sort -u
 ```
 
 and on the Frame itself (Desktop Mode, Konsole):
