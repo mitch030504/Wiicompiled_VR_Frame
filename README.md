@@ -57,7 +57,7 @@ to immersive stereo rendering. VR is opt-in and falls back to the normal desktop
 runtime or headset is unavailable. In first person you sit in the cockpit, where the steering wheel
 or handlebar turns with your steering, and hand steering by heurazy lets you grab it with the
 tracked controllers and turn it. On a Quest the hands can follow the headset's own hand tracking.
-A Steam Frame build of the Android app (not yet tested on the headset) adds the Frame controllers'
+A native SteamOS build for the Steam Frame (not yet tested on the headset) adds the Frame controllers'
 D-pad, a 120 Hz display for the game's 60 FPS, and foveation that follows your eyes; see
 [`docs/steam-frame.md`](docs/steam-frame.md).
 See [`OPENXR.md`](OPENXR.md) for setup, configuration, and the current limitations.

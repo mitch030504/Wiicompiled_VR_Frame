@@ -1,23 +1,112 @@
 # WiiCompiled VR on the Steam Frame
 
 Valve's Steam Frame runs SteamOS on a Snapdragon 8 Gen 3 (Cortex-X4, A720 and A520 cores, Adreno 750),
-with 2160x2160 panels per eye at 72 to 144 Hz, eye tracking, and SteamVR as its OpenXR runtime. It runs
-Android apps through Lepton, SteamOS's Android layer, where SteamVR provides an Android OpenXR runtime
-(OpenXR 1.0, through the Khronos loader's runtime broker). The Steam Frame build is therefore a third
-flavour of the Quest app, `steamFrame`: everything in `docs/quest-port.md` below the app shell (the
-Vulkan backend, the game kit, `.wcgame` packages, the on-headset build) applies unchanged, and this
-document covers what differs.
+with 2160x2160 panels per eye at 72 to 144 Hz, eye tracking, and SteamVR as its OpenXR runtime. A game
+can run on it two ways, and this project has both:
 
-A native SteamOS ARM64 build is a separate, later piece of work: Linux has no OpenXR graphics backend
-yet (see [A native SteamOS build](#a-native-steamos-build)).
+- **Natively on SteamOS** (Linux ARM64), with SteamVR's own OpenXR runtime. This is the Frame's build:
+  [The native SteamOS build](#the-native-steamos-build) says how to make and run it.
+- **As an Android app in Lepton**, SteamOS's Android layer, as a third flavour of the Quest app
+  (`steamFrame`). It is built, but it cannot show a picture there: Lepton's Vulkan driver has no
+  external memory or sync fd extensions, and the Quest backend's two-device eye handoff needs them
+  (see [What the Frame reported](#what-the-frame-reported)).
 
-**Status: not yet run on a Steam Frame, and the Android backend as it stands cannot present under
-Lepton**: Lepton's Vulkan driver has no external memory or sync fd extensions, which the Quest
-backend's two-device design needs (see [What the Frame reported](#what-the-frame-reported)). The
-flavour, controller, refresh rate and foveation work below stays valid; the eye handoff has to move
-to a single shared device first.
+Most of what this document describes is shared by both: the Frame controller profile, the 120 Hz
+request, eye-tracked foveation and the Frame's defaults. The native build gets them through
+`MKW_HEADSET=steam_frame` (`MKW_HEADSET_STEAM_FRAME`), as the Android flavour does.
 
-## What the flavour changes
+**Status: not yet run on a Steam Frame.** The native build's VR code compiles and the unit tests
+pass; building it on the Frame and the device checks are still to do.
+
+## The native SteamOS build
+
+The backend is the PC's same-device Vulkan backend (`openxr_vulkan_win32.cpp`, on Linux too): the
+OpenXR runtime creates Dawn's own Vulkan instance and device through Aurora's patches to Dawn, and
+each eye is copied into SteamVR's swapchain on Dawn's queue, so nothing is shared between devices.
+On Linux, Dawn links statically, so the patched Dawn is built once on the build machine
+(`Launcher/build-dawn-linux.sh`); `aurora-dawn.json` in its package declares the Vulkan hook and
+density map ABIs, and only against such a package does Aurora compile the bridge
+(`AURORA_DAWN_VULKAN_HOOKS`) and the density maps (`AURORA_DAWN_FDM`). Against a stock Dawn the
+build still links, and VR falls back to the desktop.
+
+What the Frame build changes, beyond the Android flavour's settings:
+
+- `-mcpu=cortex-x4` (`MKW_LINUX_CPU`, which `--cpu` overrides).
+- `AuroraConfig::xrHeadsetOnly`: Aurora neither presents the desktop window nor renders it past the
+  last pass the eyes sample, as on Android (4 to 6 ms of a 12 ms GPU frame on a Quest 3).
+- Fragment density maps are asked for on Linux as on the Quest; `AURORA_FDM=0` or `1` overrides the
+  settings, as `debug.wiicompiled.fdm` does there.
+- Controller motion uses `XR_KHR_convert_timespec_time` when SteamVR offers it.
+
+### Building it on the Frame
+
+SteamOS's root file system is read-only, so the build runs in a Debian container on the Frame,
+started with the `podman` SteamOS already ships. Over SSH (`ssh steamos@<frame-ip>`):
+
+```bash
+mkdir -p ~/wiicompiled && cd ~/wiicompiled
+git clone -b claude/peaceful-keller-2ek99b https://github.com/mitch030504/Wiicompiled_VR_Frame.git
+podman run -it --name wiicompiled-build -v ~/wiicompiled:/work:Z docker.io/library/debian:trixie bash
+```
+
+Inside the container (`podman start -ai wiicompiled-build` gets back into it later):
+
+```bash
+apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl git python3 xz-utils unzip file pkg-config g++ binutils libicu-dev zlib1g-dev \
+    libvulkan-dev libx11-dev libx11-xcb-dev libxcb1-dev libxext-dev libxrandr-dev libxinerama-dev \
+    libxcursor-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols \
+    libdecor-0-dev libegl-dev libgl-dev libgles-dev libdrm-dev libgbm-dev libasound2-dev libpulse-dev \
+    libpipewire-0.3-dev libudev-dev libdbus-1-dev libusb-1.0-0-dev
+cd /work/Wiicompiled_VR_Frame
+Launcher/prepare-portable-tools.sh --arch aarch64 --destination /work/tools   # clang 22, CMake, Ninja
+T=/work/tools/toolchain-aarch64/bin
+curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 8.0 --install-dir /work/dotnet
+Launcher/build-dawn-linux.sh --work-dir /work/dawn --cc $T/clang --cxx $T/clang++ --cmake $T/cmake --ninja $T/ninja
+```
+
+Then the game. `local-build.sh` translates your own disc, so it needs `main.dol` and `StaticR.rel` from
+your extracted PAL `RMCP01` disc in `Assets/` (the extracted disc's `sys/main.dol` and
+`files/rel/StaticR.rel`; `translator/README.md` explains):
+
+```bash
+mkdir -p Assets && cp <DATA>/sys/main.dol <DATA>/files/rel/StaticR.rel Assets/
+Launcher/local-build.sh --output-dir /work/out --cc $T/clang --cxx $T/clang++ --fuse-ld lld \
+    --cmake $T/cmake --ninja $T/ninja --dotnet /work/dotnet/dotnet \
+    --openxr --dawn-package /work/dawn/package --headset steam_frame
+```
+
+The game lands in `~/wiicompiled/out` on the Frame. Debian trixie's C library is not newer than
+SteamOS's, so the binary runs on SteamOS outside the container. If CMake reports a missing package,
+install its `-dev` package in the container and run the same command again; both scripts resume
+where they stopped.
+
+### Running it
+
+The game reads its `Config.toml` from `~/.local/share/WiiCompiled/` on SteamOS (it is created on the first start): set
+`[paths] dvd_root` there to your extracted disc (the directory holding `sys/` and `files/`). Start
+SteamVR on the Frame, then start `~/wiicompiled/out/WiiCompiled`, from Desktop Mode or as a
+non-Steam game added to the library. The run log is in `Logs/` next to `Config.toml`; it should show,
+in order:
+
+1. `OpenXR runtime offers N extensions: ...`, and `OpenXR initialized: runtime 'SteamVR/OpenXR'`;
+2. `OpenXR Vulkan requirements: ... Dawn will create its device through the runtime`;
+3. `Fragment density maps: enabled` (the patched Dawn and Turnip's density maps);
+4. `OpenXR Vulkan swapchains ready ... same-queue native eye copies`;
+5. `display refresh rate 120 Hz requested`, the session reaching `FOCUSED`, and
+   `OpenXR interaction profiles: left /interaction_profiles/valve/frame_controller_valve`;
+6. `OpenXR eye gaze: available`, then `tracking`.
+
+`Linux Vulkan OpenXR requires a Dawn built with Aurora's patches` means the build used a stock Dawn:
+check that `--dawn-package` pointed at `build-dawn-linux.sh`'s `package` directory.
+
+## The Android flavour in Lepton
+
+Everything from here to [Building and installing](#building-and-installing) is the `steamFrame`
+flavour of the Quest app. Its controller, refresh rate and foveation work is shared with the native
+build; its launch and manifest are Lepton's.
+
+### What the flavour changes
 
 | | Quest flavours | `steamFrame` |
 | --- | --- | --- |
@@ -185,7 +274,7 @@ What follows from them:
   through exactly those, so it cannot present under Lepton. What can: binding Dawn's own device to
   the session, as the Windows Vulkan backend (`openxr_vulkan_win32.cpp`) does, so the eyes are
   copied into the swapchain on Dawn's queue with no sharing at all. That backend is also the core
-  of a native SteamOS build ([below](#a-native-steamos-build)).
+  of a native SteamOS build ([above](#the-native-steamos-build)).
 - **Finding the runtime.** An app inside Lepton reaches SteamVR's OpenXR runtime through the system
   runtime file, not a broker. The Khronos loader the game links statically (`DYNAMIC_LOADER OFF`)
   tries the runtime brokers first, then reads `/{product,odm,oem,vendor,system}/etc/openxr/1/active_runtime.json`,
@@ -315,26 +404,3 @@ Open questions only the device can answer:
 - Whether the gaze needs an Android permission under Lepton.
 - Whether "Build on this headset" can run its toolchain through `/system/bin/linker64` inside
   Lepton. A game built on the PC does not depend on it.
-
-## A native SteamOS build
-
-Valve recommends native Linux ARM64 builds for the Frame, and one would avoid Lepton and the
-two-device copy. The pieces:
-
-- **Backend.** The Windows Vulkan backend (`openxr_vulkan_win32.cpp`), where OpenXR creates Dawn's
-  own device and eyes are copied on Dawn's queue, ports almost as it is. Only its `_WIN32` guards are
-  platform-specific.
-- **Interop.** Aurora's `vulkan_win32_interop.cpp` finds the patched Dawn's exports with
-  `GetModuleHandleW`. A static Linux Dawn would reference them directly, and `aurora_core.cmake`
-  compiles that file on Windows only.
-- **Dawn.** A linux-aarch64 Dawn built with `aurora-main/patches/dawn` (the hook ABI and density
-  maps), as `android/Build-QuestDawn.ps1` already does for Android.
-- **`openxr_integration.cpp`.** It needs a Linux branch asking for `XR_KHR_vulkan_enable2` and
-  `XR_KHR_convert_timespec_time`. Today its `#else` is Android's and requires
-  `XR_KHR_android_create_instance`.
-- **Controller timing.** `openxr_input.cpp` needs a `__linux__` branch for the input clock.
-- **CPU target.** An `MKW_LINUX_CPU` knob in place of `-mcpu=native`, for cross-builds.
-- **Android-gated fixes.** The Adreno vertex padding, `headset_owns_display` and the
-  `last_pass_feeding_replay` saving are gated on `__ANDROID__`. They would follow the GPU or the
-  headset instead.
-- **Packaging.** SteamOS packaging, and a way to build the player's game for it.
