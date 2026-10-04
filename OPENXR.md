@@ -40,6 +40,7 @@ required = false
 mirror_view = "normal"
 controller_mode = "wii_remote"
 frame_interpolation_fps = 0
+refresh_rate = 0
 render_scale = 1.0
 world_units_per_meter = 500.0
 hud_distance_meters = 2.0
@@ -217,11 +218,19 @@ its CPU and GPU domains: `boost`, `sustained_high`, `sustained_low`, `power_savi
 request (see `docs/quest-port.md`); desktop runtimes rarely offer the extension, and the setting
 then does nothing. It is read at launch, and the session log records whether the runtime accepted
 it and any later performance notification (a thermal or rendering warning).
-`foveation` (Quest only, default `medium`) shades the edges of the immersive race view more coarsely:
+`foveation` (Quest and Steam Frame only, default `medium`) shades the edges of the immersive race view more coarsely:
 `off`, `low`, `medium` or `high`, see [Foveated rendering](#foveated-rendering). A session launched
 with it off runs without fragment density maps, so going from `off` to a level takes a restart;
 between levels, and back to `off`, it is live from the headset panel's VR tab. The launcher's
-Settings page has it too.
+Settings page has it too. `eye_tracked_foveation` (default on for the Steam Frame, off elsewhere)
+centres it on the player's gaze where the runtime offers `XR_EXT_eye_gaze_interaction` with an eye
+tracker; see [Eye-tracked foveation](#eye-tracked-foveation).
+`refresh_rate` is the display rate in Hz asked of the runtime through `XR_FB_display_refresh_rate`
+each time the session starts and whenever it changes, or `0` (the default, `120` on the Steam
+Frame) to leave the headset's own. The game renders 60 frames a second, so 120 Hz shows each frame
+for exactly two refreshes. A rate the runtime does not list, or declines, is logged and leaves its
+own; setting `0` again restores the rate the session started at. It is live from F10 / the headset
+panel (*Headset refresh rate*) and the Quest launcher; runtimes without the extension ignore it.
 
 ## Controllers
 
@@ -268,6 +277,12 @@ menu, so pause would otherwise be out of reach there. C sits on right B rather t
 because hand steering holds a grip down for a whole corner, and C is the game's look-behind. The
 game's Wii Remote rumble vibrates both controllers, subject to the ordinary controller-vibration
 switch.
+
+The Steam Frame's controllers get their own profile where the runtime offers it
+(`XR_VALVE_frame_controller_interaction`, `/interaction_profiles/valve/frame_controller_valve`):
+right A, B, trigger and stick as above, left View as the left menu (+), the left shoulder as left Y
+(the settings panel), and the left D-pad as the Wii Remote's D-pad (the gamepad's D-pad in
+`"gamepad"` mode). The table is in `docs/steam-frame.md`.
 
 **Motion.** Each XR frame the aim and grip poses are located at the measured current time
 (`XR_KHR_win32_convert_performance_counter_time`, `XR_KHR_convert_timespec_time` on Android), not
@@ -1068,6 +1083,17 @@ ripples give way to a smoother look. It is no fix for a heavy track: on Retro Re
 2 at 1.0, GPU-bound at about 40 FPS, no level raised the frame rate, while merging the eye passes
 did (39 to 41.5 FPS).
 
+### Eye-tracked foveation
+
+With `eye_tracked_foveation`, a runtime that offers `XR_EXT_eye_gaze_interaction` and reports an eye
+tracker (the Steam Frame's SteamVR) has its gaze pose located for each packet's display time and
+turned into tangents of each eye's view (`vr/eye_gaze.h`), which `AuroraStereoFrame` carries as
+`gaze`/`gazeValid`. Aurora centres the level's rings on the gaze snapped to a cell of two map texels
+(about 3 degrees), keeping up to 32 maps per eye, one per cell looked at, and binds a new one once
+its upload completes, the previous map staying bound meanwhile. Without a tracked gaze (a blink, no
+tracker, the setting off) the map is the forward one above, unchanged. Details and the Steam Frame
+checks are in `docs/steam-frame.md`.
+
 ## Diagnostics
 
 **F10 > Diagnostics** holds three bug-report aids.
@@ -1250,6 +1276,7 @@ custom DLL's ABI through three borrowed-image copy/readback cycles; run it with 
 | Windows D3D12 | Implemented: same-adapter, same-device asynchronous OpenXR submission. |
 | Windows Vulkan | Implemented, opt-in (`video.graphics_api = "vulkan"`): the runtime creates Dawn's Vulkan instance and device through `XR_KHR_vulkan_enable2`, eyes are copied on the same queue, and Dawn's device guard is held around the four queue-touching OpenXR calls. Needs the custom Dawn from `Launcher/Build-DawnVulkan.ps1`. Raced on SteamVR/PSVR2 at the headset's full rate; other runtimes unexercised. See [Windows Vulkan](#windows-vulkan). |
 | Android Vulkan (Meta Quest) | Implemented and running on a Quest 3: the OpenXR side owns its own Vulkan device (`XR_KHR_vulkan_enable2`, `XR_KHR_vulkan_enable` fallback) and shares eyes with Dawn through `AHardwareBuffer`s ordered by sync-fd fences. Controllers arrive through OpenXR actions as a virtual SDL gamepad. See `docs/quest-port.md`. |
+| Android Vulkan (Steam Frame) | The same backend in the `steamFrame` flavour, for SteamVR's Android runtime under Lepton: Frame controller profile, 120 Hz request, eye-tracked foveation. Built and unit-tested, not yet run on the headset. See `docs/steam-frame.md`. |
 | Linux Vulkan | Not wired. The pinned Dawn package does not expose a native Vulkan device, and the AHardwareBuffer bridge is Android-only; a dma-buf/opaque-fd variant of the same design would cover desktop Linux. |
 | Other platforms | Not wired yet. |
 

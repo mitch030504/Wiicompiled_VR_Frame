@@ -1,8 +1,9 @@
 # WiiCompiled VR for Meta Quest (Android)
 
 Standalone Android/OpenXR build of the Mario Kart Wii recompilation for Quest 1,
-Quest 2, Quest 3, Quest 3S and Quest Pro. The full design, build walkthrough and current
-status live in [docs/quest-port.md](../docs/quest-port.md); this directory only
+Quest 2, Quest 3, Quest 3S and Quest Pro, and, as the `steamFrame` flavour, for Valve's Steam
+Frame under Lepton ([docs/steam-frame.md](../docs/steam-frame.md)). The full design, build
+walkthrough and current status live in [docs/quest-port.md](../docs/quest-port.md); this directory only
 holds the Gradle project, its helper scripts, the game kit tooling
 (`QuestGameKit.psm1`, `Build-QuestGame.ps1`), the on-headset build toolchain
 (`Prepare-QuestToolchain.ps1`, `toolchain/`) and `nod-jni`.
@@ -10,6 +11,7 @@ holds the Gradle project, its helper scripts, the game kit tooling
 ```powershell
 powershell -ExecutionPolicy Bypass -File android/Prepare-QuestDependencies.ps1          # stages the SDL3 3.4.4 AAR once
 powershell -ExecutionPolicy Bypass -File android/Build-Quest.ps1 -Install               # the app, debug-signed, installs over adb
+powershell -ExecutionPolicy Bypass -File android/Build-Quest.ps1 -Headset frame         # Steam Frame flavour
 powershell -ExecutionPolicy Bypass -File android/Build-Quest.ps1 -Headset quest1 -Install # Quest 1 flavour
 ```
 
