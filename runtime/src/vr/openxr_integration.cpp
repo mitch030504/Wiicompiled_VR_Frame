@@ -29,6 +29,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <vector>
 
 #if defined(MKW_ENABLE_OPENXR)
 #include "vr/openxr_backend.h"
@@ -446,6 +447,8 @@ public:
 #endif
         if (has_extension("XR_FB_display_refresh_rate")) {
             runtime_->LoadFunction("xrGetDisplayRefreshRateFB", &get_display_refresh_rate_);
+            runtime_->LoadFunction("xrEnumerateDisplayRefreshRatesFB", &enumerate_refresh_rates_);
+            runtime_->LoadFunction("xrRequestDisplayRefreshRateFB", &request_refresh_rate_);
         }
         if (has_extension("XR_EXT_performance_settings")) {
             runtime_->LoadFunction("xrPerfSettingsSetPerformanceLevelEXT", &set_performance_level_);
@@ -576,6 +579,8 @@ public:
         prepared_ = false;
         convert_display_time_ = nullptr;
         get_display_refresh_rate_ = nullptr;
+        enumerate_refresh_rates_ = nullptr;
+        request_refresh_rate_ = nullptr;
         set_performance_level_ = nullptr;
         headset_hz_.store(0, std::memory_order_relaxed);
         rendered_fps_.store(0, std::memory_order_relaxed);
@@ -590,6 +595,10 @@ public:
         ResetTrackingOrigin();
         applied_session_run_serial_ = 0;
         session_was_active_ = false;
+        refresh_rate_session_serial_ = 0;
+        requested_refresh_rate_ = 0;
+        session_start_refresh_rate_ = 0.0f;
+        refresh_rate_changed_ = false;
     }
 
     bool IsRunning() const noexcept { return running_.load(std::memory_order_acquire); }
@@ -797,6 +806,70 @@ private:
                                << (XR_SUCCEEDED(gpu) ? "set" : "refused") << " (" << gpu << ")" << std::endl;
     }
 
+    // [vr] refresh_rate (XR_FB_display_refresh_rate), asked of the runtime each time the session
+    // starts running and whenever the setting changes. The game renders 60 frames a second, so a
+    // display at 120 Hz shows each one for exactly two refreshes. 0 gives back the rate the session
+    // started at, if this changed it. A rate the runtime does not list, or declines (SteamVR may),
+    // is logged and the runtime keeps its own.
+    void ApplyRefreshRate(uint32_t requested, bool session_started) {
+        if (runtime_ == nullptr || !runtime_->HasSession()) {
+            return;
+        }
+        if (session_started) {
+            session_start_refresh_rate_ = 0.0f;
+            refresh_rate_changed_ = false;
+            if (get_display_refresh_rate_ != nullptr &&
+                XR_FAILED(get_display_refresh_rate_(runtime_->Session(), &session_start_refresh_rate_))) {
+                session_start_refresh_rate_ = 0.0f;
+            }
+        }
+        float target = static_cast<float>(requested);
+        if (requested == 0) {
+            if (!refresh_rate_changed_ || !(session_start_refresh_rate_ > 0.0f)) {
+                return;
+            }
+            target = session_start_refresh_rate_;
+        }
+        if (enumerate_refresh_rates_ == nullptr || request_refresh_rate_ == nullptr) {
+            RT_LOG(RT_TAG_RUNTIME) << "OpenXR: display refresh rate " << target
+                                   << " Hz not requested: the runtime does not offer XR_FB_display_refresh_rate"
+                                   << std::endl;
+            return;
+        }
+        uint32_t count = 0;
+        XrResult result = enumerate_refresh_rates_(runtime_->Session(), 0, &count, nullptr);
+        std::vector<float> rates;
+        if (XR_SUCCEEDED(result) && count > 0) {
+            rates.resize(count);
+            result = enumerate_refresh_rates_(runtime_->Session(), count, &count, rates.data());
+            rates.resize(XR_SUCCEEDED(result) ? std::min<size_t>(count, rates.size()) : 0);
+        }
+        if (XR_FAILED(result) || rates.empty()) {
+            RT_LOG(RT_TAG_RUNTIME) << "OpenXR: display refresh rate " << target
+                                   << " Hz not requested: the runtime lists no rates (" << result << ")" << std::endl;
+            return;
+        }
+        std::ostringstream available;
+        for (size_t i = 0; i < rates.size(); ++i) {
+            available << (i == 0 ? "" : "/") << rates[i];
+        }
+        const float rate = MatchDisplayRefreshRate(rates.data(), static_cast<uint32_t>(rates.size()), target);
+        if (rate == 0.0f) {
+            RT_LOG(RT_TAG_RUNTIME) << "OpenXR: display refresh rate " << target
+                                   << " Hz is not offered (available " << available.str()
+                                   << " Hz); keeping the runtime's" << std::endl;
+            return;
+        }
+        const XrResult set = request_refresh_rate_(runtime_->Session(), rate);
+        if (XR_SUCCEEDED(set)) {
+            refresh_rate_changed_ = requested != 0;
+        }
+        RT_LOG(RT_TAG_RUNTIME) << "OpenXR: display refresh rate " << rate << " Hz "
+                               << (XR_SUCCEEDED(set) ? "requested" : "refused") << " (" << set << "; available "
+                               << available.str() << " Hz, session started at " << session_start_refresh_rate_
+                               << " Hz)" << std::endl;
+    }
+
     static bool ProvideStereoFrame(uint32_t, AuroraStereoFrame* output, void* userdata) {
         auto* self = static_cast<OpenXRIntegration*>(userdata);
         if (self == nullptr || output == nullptr) {
@@ -893,6 +966,14 @@ private:
                 rendered_fps_.store(0, std::memory_order_relaxed);
                 WaitForStopOrDelay(std::chrono::milliseconds(5));
                 continue;
+            }
+            // The configured refresh rate, at each session start and whenever it changes.
+            if (const uint32_t refresh_rate = RuntimeConfigFile::VrRefreshRate();
+                session_run_serial != refresh_rate_session_serial_ || refresh_rate != requested_refresh_rate_) {
+                const bool session_started = session_run_serial != refresh_rate_session_serial_;
+                refresh_rate_session_serial_ = session_run_serial;
+                requested_refresh_rate_ = refresh_rate;
+                ApplyRefreshRate(refresh_rate, session_started);
             }
 
             const MkwVRPolicySnapshot policy = MkwVRPolicyGetSnapshot();
@@ -1874,7 +1955,15 @@ private:
     std::chrono::steady_clock::time_point timing_start_ = std::chrono::steady_clock::now();
     uint32_t timing_submissions_ = 0;
     PFN_xrGetDisplayRefreshRateFB get_display_refresh_rate_ = nullptr;
+    PFN_xrEnumerateDisplayRefreshRatesFB enumerate_refresh_rates_ = nullptr;
+    PFN_xrRequestDisplayRefreshRateFB request_refresh_rate_ = nullptr;
     PFN_xrPerfSettingsSetPerformanceLevelEXT set_performance_level_ = nullptr;
+    // [vr] refresh_rate as last applied, the session run it was applied in, and the rate that run
+    // started at (pacing thread).
+    uint64_t refresh_rate_session_serial_ = 0;
+    uint32_t requested_refresh_rate_ = 0;
+    float session_start_refresh_rate_ = 0.0f;
+    bool refresh_rate_changed_ = false;
 #if defined(_WIN32)
     using ConvertDisplayTime = XrResult (XRAPI_PTR*)(XrInstance, XrTime, LARGE_INTEGER*);
 #else

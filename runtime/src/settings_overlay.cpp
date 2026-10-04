@@ -187,6 +187,9 @@ int g_vrFrameInterpolationMode = [] {
     return static_cast<int>(std::find(kVrInterpolationFps.begin(), kVrInterpolationFps.end(), value) -
                             kVrInterpolationFps.begin());
 }();
+// [vr] refresh_rate choices; a value set in Config.toml outside them is shown as it is.
+constexpr std::array<uint32_t, 5> kVrRefreshRates{0, 72, 90, 120, 144};
+uint32_t g_vrRefreshRate = RuntimeConfigFile::VrRefreshRate();
 int g_vrFirstPersonHiddenModel = RuntimeConfigFile::VrFirstPersonHiddenModel();
 bool g_openxrDiagnosticsLogging = RuntimeConfigFile::DiagnosticsOpenXRLogging(false);
 bool g_firstPersonDiagnosticsLogging = RuntimeConfigFile::DiagnosticsFirstPersonLogging(false);
@@ -1517,6 +1520,29 @@ void DrawVrSettings() {
                         "off, or without a GPU that supports it: a new level applies after a restart.");
     }
 #endif
+    {
+        const auto rateLabel = [](uint32_t hz) {
+            return hz == 0 ? std::string("Headset's own") : std::to_string(hz) + " Hz";
+        };
+        if (ImGui::BeginCombo("Headset refresh rate", rateLabel(g_vrRefreshRate).c_str())) {
+            for (const uint32_t hz : kVrRefreshRates) {
+                if (ImGui::Selectable(rateLabel(hz).c_str(), hz == g_vrRefreshRate) && hz != g_vrRefreshRate) {
+                    g_vrRefreshRate = hz;
+                    // The XR thread follows the setting and asks the runtime for it.
+                    RuntimeConfigFile::SetVrRefreshRate(hz);
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(
+                "Asks the headset for this display rate. The game runs at 60 FPS, so 120 Hz shows every "
+                "frame for exactly two refreshes, where 72 and 90 Hz hold some frames longer than others. "
+                "Only runtimes that let apps choose (XR_FB_display_refresh_rate: the Quest, the Steam "
+                "Frame, Virtual Desktop) take it; the Headset line below shows the rate in use. Applies "
+                "immediately.");
+        }
+    }
     if (ImGui::Combo("VR frame interpolation (experimental)", &g_vrFrameInterpolationMode,
                      kVrInterpolationLabels.data(), static_cast<int>(kVrInterpolationLabels.size()))) {
         const auto target = kVrInterpolationFps[static_cast<size_t>(g_vrFrameInterpolationMode)];
@@ -1526,7 +1552,7 @@ void DrawVrSettings() {
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip(
             "Auto matches the headset refresh rate. 72, 90 and 120 cap the scene rendering rate; "
-            "set the headset's refresh rate in Virtual Desktop or your VR runtime. "
+            "set the headset's refresh rate above, or in Virtual Desktop or your VR runtime. "
             "The game stays at 60 Hz. Adds one game frame of scene latency; head tracking stays current. "
             "Needs GPU headroom and may show interpolation artifacts. Applies immediately.");
     }

@@ -50,6 +50,24 @@ int main() {
     Require(RuntimeConfigFile::VrFoveationLevelIndex("high") == 3);
     Require(RuntimeConfigFile::VrFoveationLevelIndex("ultra") == 0);
 
+    // [vr] refresh_rate: Hz asked of the runtime, 0 leaving its own. The Steam Frame
+    // starts at 120, twice the game's 60.
+    Require(Parse("[vr]\nrefresh_rate = 120\n").vrRefreshRate == 120u);
+    Require(Parse("[vr]\nrefresh_rate = 0\n").vrRefreshRate == 0u);
+    Require(Parse("[vr]\nrefresh_rate = 144\n").vrRefreshRate == 144u);
+    Require(!Parse("[vr]\nrefresh_rate = 30\n").vrRefreshRate.has_value());
+    Require(!Parse("[vr]\nrefresh_rate = 500\n").vrRefreshRate.has_value());
+    Require(!Parse("[vr]\nrefresh_rate = -1\n").vrRefreshRate.has_value());
+    Require(!Parse("[vr]\nrefresh_rate = \"120\"\n").vrRefreshRate.has_value());
+    Require(!Parse("[vr]\n").vrRefreshRate.has_value());
+#if defined(MKW_HEADSET_STEAM_FRAME)
+    Require(RuntimeConfigFile::kVrRefreshRateDefault == 120u);
+    Require(std::string_view(MKW_VR_REFRESH_RATE_DEFAULT_TEXT) == "120");
+#else
+    Require(RuntimeConfigFile::kVrRefreshRateDefault == 0u);
+    Require(std::string_view(MKW_VR_REFRESH_RATE_DEFAULT_TEXT) == "0");
+#endif
+
     // [vr] hand_tracking: the cockpit hands follow the headset's hand tracking.
     Require(Parse("[vr]\nhand_tracking = true\n").vrHandTracking == true);
     Require(Parse("[vr]\nhand_tracking = false\n").vrHandTracking == false);

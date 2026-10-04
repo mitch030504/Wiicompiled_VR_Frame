@@ -244,6 +244,13 @@ class SettingsPage(
                 write = { c, index -> c.setString("vr", "performance_level", PERFORMANCE_LEVELS[index]) },
             )
             choice(
+                R.string.vr_refresh_rate, R.string.vr_refresh_rate_helper,
+                listOf(activity.getString(R.string.vr_refresh_rate_headset), "72 Hz", "90 Hz", "120 Hz", "144 Hz"),
+                read = { REFRESH_RATES.indexOf(vrRefreshRate(it)) },
+                write = { c, index -> c.setInteger("vr", "refresh_rate", REFRESH_RATES[index]) },
+                custom = { "${vrRefreshRate(it)} Hz" },
+            )
+            choice(
                 R.string.vr_foveation, R.string.vr_foveation_helper,
                 listOf(
                     R.string.vr_foveation_off, R.string.vr_foveation_low,
@@ -784,6 +791,10 @@ class SettingsPage(
         val FOVEATION_DEFAULT = FOVEATION_LEVELS.indexOf("medium")
         val CONTROLLER_MODES = listOf("wii_remote", "gamepad", "none")
         val INTERPOLATION_FPS = listOf(0L, 1L, 72L, 90L, 120L)
+        // [vr] refresh_rate choices, 0 being the headset's own rate.
+        val REFRESH_RATES = listOf(0L, 72L, 90L, 120L, 144L)
+        /** runtime_config.h's kVrRefreshRateDefault: 120 on the Steam Frame, the headset's own elsewhere. */
+        val REFRESH_RATE_DEFAULT = if (BuildConfig.STEAM_FRAME) 120L else 0L
         val RESOLUTIONS = listOf(1.0, 1.5, 2.0, 3.0, 4.0)
         val SUPPORTED_RESOLUTIONS = listOf(0.0, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0)
         const val BLOOM_PATH = 0x10L
@@ -812,6 +823,10 @@ class SettingsPage(
         fun disabledPostProcessing(config: TomlConfig): Long =
             config.integer("video", "disabled_post_processing_paths")
                 ?.takeIf { it in 0L..UINT32_MAX && (it and BLOOM_PATH.inv()) == 0L } ?: BLOOM_PATH
+
+        /** vr.refresh_rate where IsSupportedVrRefreshRate accepts it, else the runtime's default. */
+        fun vrRefreshRate(config: TomlConfig): Long =
+            config.integer("vr", "refresh_rate")?.takeIf { it == 0L || it in 60L..240L } ?: REFRESH_RATE_DEFAULT
 
         /** vr.frame_interpolation_fps, with the legacy frame_interpolation switch and NormalizeFrameInterpolationFps. */
         fun vrInterpolationFps(config: TomlConfig): Long {

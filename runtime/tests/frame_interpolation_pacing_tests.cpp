@@ -12,6 +12,13 @@ static void Require(bool condition) {
 }
 
 int main() {
+    // [vr] refresh_rate picks the runtime's own value for the rate asked.
+    const float frame_rates[] = {72.0f, 90.0f, 119.98f, 144.0f};
+    Require(mkw::vr::MatchDisplayRefreshRate(frame_rates, 4, 120.0f) == 119.98f);
+    Require(mkw::vr::MatchDisplayRefreshRate(frame_rates, 4, 90.0f) == 90.0f);
+    Require(mkw::vr::MatchDisplayRefreshRate(frame_rates, 4, 60.0f) == 0.0f);
+    Require(mkw::vr::MatchDisplayRefreshRate(frame_rates, 4, 100.0f) == 0.0f);
+    Require(mkw::vr::MatchDisplayRefreshRate(frame_rates, 0, 120.0f) == 0.0f);
     for (uint32_t target : {0u, 1u, 72u, 90u, 120u}) {
         std::istringstream input("[vr]\nframe_interpolation_fps = " + std::to_string(target) + "\n");
         const auto config = RuntimeConfigFile::ParseConfig(input);

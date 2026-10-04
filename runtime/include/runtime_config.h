@@ -63,6 +63,7 @@ struct RuntimeUserConfig {
     std::optional<std::string> vrMirrorView;
     std::optional<std::string> vrControllerMode;
     std::optional<uint32_t> vrFrameInterpolationFps;
+    std::optional<uint32_t> vrRefreshRate;
     std::optional<bool> vrFirstPerson;
     std::optional<bool> vrFirstPersonToggleClick;
     std::optional<float> vrFirstPersonUnitsPerMeter;
@@ -280,6 +281,25 @@ inline constexpr const char* kVrPerformanceLevelDefault = "boost";
 inline bool IsSupportedVrPerformanceLevel(std::string_view value) {
     return value == "default" || value == "power_savings" || value == "sustained_low" ||
            value == "sustained_high" || value == "boost";
+}
+// The display refresh rate asked of the OpenXR runtime (XR_FB_display_refresh_rate), in Hz, each
+// time the session starts and whenever the setting changes; 0 leaves the headset's own rate. The
+// game renders 60 frames a second, so at 120 Hz every frame shows for exactly two refreshes, where
+// 72 or 90 Hz hold some frames longer than others. The Steam Frame starts at 120; elsewhere the
+// headset's own setting stays in charge. A runtime without the extension, or one that declines the
+// rate, keeps its own.
+#if defined(MKW_HEADSET_STEAM_FRAME)
+inline constexpr uint32_t kVrRefreshRateDefault = 120;
+#define MKW_VR_REFRESH_RATE_DEFAULT_TEXT "120"
+#else
+inline constexpr uint32_t kVrRefreshRateDefault = 0;
+#define MKW_VR_REFRESH_RATE_DEFAULT_TEXT "0"
+#endif
+inline constexpr uint32_t kVrRefreshRateMin = 60;
+inline constexpr uint32_t kVrRefreshRateMax = 240;
+
+inline bool IsSupportedVrRefreshRate(uint32_t value) {
+    return value == 0 || (value >= kVrRefreshRateMin && value <= kVrRefreshRateMax);
 }
 // Fixed foveated rendering of the immersive eyes on the Quest, in the order of
 // aurora_set_stereo_foveation's levels: the periphery is shaded in 2x2, then
@@ -545,6 +565,11 @@ inline void EnsureConfigFile() {
               "controller_mode = \"wii_remote\"\n"
               "# VR interpolation: 0 = Off, 1 = Auto, or 72/90/120 FPS. Live.\n"
               "frame_interpolation_fps = 0\n"
+              "# Display refresh rate asked of the headset, in Hz (72, 90, 120,\n"
+              "# 144, ...), or 0 to leave the headset's own setting. The game runs\n"
+              "# at 60, so 120 shows every frame twice. Only runtimes that let apps\n"
+              "# choose (XR_FB_display_refresh_rate) take it. Live.\n"
+              "refresh_rate = " MKW_VR_REFRESH_RATE_DEFAULT_TEXT "\n"
               "render_scale = " MKW_VR_RENDER_SCALE_DEFAULT_TEXT "\n"
               "world_units_per_meter = 500.0\n"
               "hud_distance_meters = 2.0\n"
@@ -871,6 +896,9 @@ inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
     if (auto value = FindConfigValue<std::string>(document, "vr", "controller_mode");
         value && IsSupportedVrControllerMode(*value)) {
         config.vrControllerMode = *value;
+    }
+    if (auto value = FindConfigUint(document, "vr", "refresh_rate"); value && IsSupportedVrRefreshRate(*value)) {
+        config.vrRefreshRate = *value;
     }
     config.vrFrameInterpolationFps = FindConfigValue<uint32_t>(document, "vr", "frame_interpolation_fps");
     if (!config.vrFrameInterpolationFps) {
@@ -1239,6 +1267,14 @@ inline bool SetVrFrameInterpolationFps(uint32_t value) {
     value = mkw::vr::NormalizeFrameInterpolationFps(value);
     Mutable().vrFrameInterpolationFps = value;
     return WriteSetting("vr", "frame_interpolation_fps", std::to_string(value));
+}
+
+inline bool SetVrRefreshRate(uint32_t value) {
+    if (!IsSupportedVrRefreshRate(value)) {
+        return false;
+    }
+    Mutable().vrRefreshRate = value;
+    return WriteSetting("vr", "refresh_rate", std::to_string(value));
 }
 
 inline bool SetVrFirstPersonRotation(std::string value) {
@@ -1741,6 +1777,11 @@ inline std::string VrControllerMode(std::string fallback = kVrControllerModeDefa
 
 inline uint32_t VrFrameInterpolationFps() {
     return mkw::vr::NormalizeFrameInterpolationFps(Get().vrFrameInterpolationFps.value_or(0));
+}
+
+inline uint32_t VrRefreshRate(uint32_t fallback = kVrRefreshRateDefault) {
+    const uint32_t value = Get().vrRefreshRate.value_or(fallback);
+    return IsSupportedVrRefreshRate(value) ? value : 0;
 }
 
 inline bool DiagnosticsOpenXRLogging(bool fallback = false) {
