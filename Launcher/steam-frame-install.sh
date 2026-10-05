@@ -52,6 +52,7 @@ nodtool_version=v2.0.0-alpha.10
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 note() { printf '    %s\n' "$*"; }
+elapsed() { printf '%dh %02dm' $((SECONDS / 3600)) $((SECONDS % 3600 / 60)); }
 fail() {
     printf '\nsteam-frame-install.sh: error: %s\n' "$*" >&2
     exit 1
@@ -90,6 +91,9 @@ done
 
 mkdir -p "$work_dir"
 work_dir=$(cd "$work_dir" && pwd)
+SECONDS=0
+progress=(-sS)
+[[ -t 2 ]] && progress=(--progress-bar)
 host_arch=$(uname -m)
 case "$host_arch" in
     x86_64|aarch64) ;;
@@ -199,7 +203,7 @@ else
         say "Downloading release $release"
         rm -rf "$work_dir/source-new"
         mkdir -p "$work_dir/source-new" "$source_dir"
-        curl -fL --progress-bar "https://github.com/$repo/archive/refs/tags/$release.tar.gz" |
+        curl -fL "${progress[@]}" "https://github.com/$repo/archive/refs/tags/$release.tar.gz" |
             tar -xz --strip-components=1 -C "$work_dir/source-new" ||
             fail "could not download release $release; the Releases page on github.com/$repo lists them"
         # Only files whose content changed are copied, stamped with the current time, so the build
@@ -244,7 +248,7 @@ check_disc_id() {
 get_nodtool() {
     nodtool="$work_dir/nodtool-$nodtool_version"
     if [[ ! -x "$nodtool" ]]; then
-        curl -fL --progress-bar -o "$nodtool.partial" \
+        curl -fL "${progress[@]}" -o "$nodtool.partial" \
             "https://github.com/encounter/nod/releases/download/$nodtool_version/nodtool-linux-$host_arch"
         chmod +x "$nodtool.partial"
         mv "$nodtool.partial" "$nodtool"
@@ -419,17 +423,24 @@ fi
 "$runtime" start "$container" >/dev/null
 note "container $container (mounts ${want_mounts//;/ })"
 
-say "Building (the first time takes hours under emulation; a log is in $work_dir/build.log)"
-if ! "$runtime" exec -e JOBS="$jobs" "$container" bash /work/container-build.sh 2>&1 | tee "$work_dir/build.log"; then
+if [[ -n "${platform_args[*]}" ]]; then
+    say "Building (a first build takes hours under emulation; a log is in $work_dir/build.log)"
+else
+    say "Building (a first build takes a while, most of it Dawn; a log is in $work_dir/build.log)"
+fi
+# .NET's first-run banner, telemetry and developer certificate are no use in a build container.
+if ! "$runtime" exec -e JOBS="$jobs" -e DOTNET_CLI_TELEMETRY_OPTOUT=1 -e DOTNET_NOLOGO=1 \
+    -e DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 -e DOTNET_GENERATE_ASPNET_CERTIFICATE=false \
+    "$container" bash /work/container-build.sh 2>&1 | tee "$work_dir/build.log"; then
     fail "the build stopped; the end of $work_dir/build.log says why. Run the script again to resume.
     A machine that froze ran out of memory: pass a lower --jobs."
 fi
 [[ -x "$work_dir/out/$game_id" ]] || fail "the build finished without $work_dir/out/$game_id"
-note "built $work_dir/out/$game_id"
+note "built $work_dir/out/$game_id ($(elapsed) so far)"
 
 # ---------------------------------------------------------------------------------------------
 if [[ -z "$frame" ]]; then
-    say "Done"
+    say "Done in $(elapsed)"
     note "The game is in $work_dir/out. Run the script again with --frame steamos@<frame-ip> to install it."
     exit 0
 fi
@@ -547,7 +558,7 @@ case "$registered" in
         note "  Add a Non-Steam Game > ~/$game_dir/$game_id. Later runs of this script keep it updated." ;;
 esac
 
-say "Done"
+say "Done in $(elapsed)"
 note "Start $game_id from your library in the headset. Settings: left shoulder button, VR tab."
 }
 
