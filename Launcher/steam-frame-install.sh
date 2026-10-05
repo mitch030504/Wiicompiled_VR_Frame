@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Builds WiiCompiled VR for the Steam Frame from a release and your own disc, and installs it on the
-# Frame. Run it again to update: it fetches the newest release and rebuilds only what changed.
+# Frame. Run it again with --update to update: it fetches the newest release and rebuilds only what
+# changed, with the options it was installed with.
 #
 #   Launcher/steam-frame-install.sh --disc PATH [--frame HOST] [options]
+#   Launcher/steam-frame-install.sh --update
 #
 # Or without downloading anything first:
 #
@@ -36,32 +38,84 @@
 #   --retro-rewind-pack DIR
 #                     use this RetroRewind6 folder instead of downloading one (implies
 #                     --retro-rewind); it is copied into the work dir and never changed
+#   --update          update an earlier install: its options are reused (any given here win), and
+#                     nothing is built when the Frame already has the newest release and Retro
+#                     Rewind pack. Follows releases unless it was installed with --source.
+#   --check           only say whether an update is available; nothing is changed
 #   -h, --help
+#
+# Installed with --frame local, the game can update itself: Settings > Updates in the game checks
+# for a new release, and its Update button runs this script with --update in the background,
+# through a systemd user service this script sets up. The tab shows the update's progress while the
+# game stays open, and a game closed meanwhile is opened again when the update is done.
 set -euo pipefail
 
 # Everything is in main, so bash has read the whole script before running any of it: when it comes
 # through curl | bash, a step that reads stdin cannot eat the rest. (Not indented, for the heredocs.)
 main() {
-trap 'printf "\nsteam-frame-install.sh: stopped by a failed step (line %s); the output above says why.\n" "$LINENO" >&2' ERR
+# What the error path below reads, set before anything can fail into it.
+mode=install
+steam_game_id=""
+trap 'on_error "$LINENO"' ERR
 
 repo=mitch030504/Wiicompiled_VR_Frame
 game_id=WiiCompiled
 image=docker.io/library/debian:trixie
 container=wiicompiled-frame-build
 nodtool_version=v2.0.0-alpha.10
+# Where the game keeps its settings, and where an update it starts reports back to it. Resolved as
+# the game resolves it (RuntimeConfigFile::ApplicationDataDirectory).
+game_data="${XDG_DATA_HOME:-$HOME/.local/share}/$game_id"
 
-say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
+say() {
+    printf '\n\033[1m==> %s\033[0m\n' "$*"
+    status running "$*"
+}
 note() { printf '    %s\n' "$*"; }
 fail() {
     printf '\nsteam-frame-install.sh: error: %s\n' "$*" >&2
+    finish_failed "${1%%$'\n'*}"
+}
+on_error() {
+    printf '\nsteam-frame-install.sh: stopped by a failed step (line %s); the output above says why.\n' "$1" >&2
+    finish_failed "a step failed (line $1)"
+}
+finish_failed() {
+    trap - ERR
+    status failed "$1"
+    relaunch
     exit 1
 }
 usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$script_path"; }
+
+# The game's Updates tab reads this: "<state>\t<unix time>\t<text>", state running, available,
+# uptodate, done or failed. Written only when the game asked for this run
+# (WIICOMPILED_UPDATE_STATUS names the file).
+status() {
+    local file=${WIICOMPILED_UPDATE_STATUS:-}
+    [[ -n "$file" ]] || return 0
+    { printf '%s\t%s\t%s\n' "$1" "$(date +%s)" "$2" > "$file.new" && mv -f "$file.new" "$file"; } 2>/dev/null || true
+}
+
+# Progress goes to that file rather than to Steam notifications: on the Frame, SteamOS's
+# steam_notif_daemon accepts a notify-send and Steam then shows nothing, even when given the
+# notification directly with steam -ifrunning (tried on a Frame, 2026-10).
+# An update the game started ends by opening the game again if it was closed meanwhile, which is
+# how its result gets seen; a game still open shows the result in its Updates tab.
+game_running() { pgrep -f "devkit-game/($game_id|RetroRewind)/" >/dev/null 2>&1; }
+relaunch() {
+    [[ -n "$steam_game_id" ]] || return 0
+    command -v steam >/dev/null 2>&1 || return 0
+    if game_running; then return 0; fi
+    note "opening $game_id again"
+    timeout 60 steam "steam://rungameid/$steam_game_id" >/dev/null 2>&1 || true
+}
 
 script_path=${BASH_SOURCE[0]:-}
 script_dir=""
 if [[ -n "$script_path" && -f "$script_path" ]]; then
     script_dir=$(cd "$(dirname "$script_path")" && pwd)
+    script_path="$script_dir/$(basename "$script_path")"
 fi
 
 disc=""
@@ -85,15 +139,151 @@ while [[ $# -gt 0 ]]; do
         --frame-disc) frame_disc=$2; shift 2 ;;
         --retro-rewind) retro_rewind=1; shift ;;
         --retro-rewind-pack) retro_rewind=1; retro_pack=$2; shift 2 ;;
+        --update) mode=update; shift ;;
+        --check) mode=check; shift ;;
         -h|--help)
             if [[ -n "$script_dir" ]]; then usage; else echo "See the comment at the top of the script."; fi
             exit 0 ;;
         *) fail "unknown argument: $1 (see --help)" ;;
     esac
 done
+# What --update reuses: the options given, before defaults fill the rest in.
+jobs_given=$jobs
+source_given=$source_dir
 
 mkdir -p "$work_dir"
 work_dir=$(cd "$work_dir" && pwd)
+
+# The game's Update button leaves a request file; the service that runs this script moves it here.
+if [[ -n "${WIICOMPILED_UPDATE_REQUEST:-}" && -f "$WIICOMPILED_UPDATE_REQUEST" ]]; then
+    steam_game_id=$(sed -n 's/^steam_game_id=\([0-9]*\)$/\1/p' "$WIICOMPILED_UPDATE_REQUEST" | head -n 1)
+    rm -f "$WIICOMPILED_UPDATE_REQUEST"
+fi
+
+if [[ "$mode" != install && -f "$work_dir/install.conf" ]]; then
+    while IFS='=' read -r key value; do
+        case "$key" in
+            frame) [[ -n "$frame" ]] || frame=$value ;;
+            frame_disc) [[ -n "$frame_disc" ]] || frame_disc=$value ;;
+            jobs) [[ -n "$jobs" ]] || jobs=$value ;;
+            source) [[ -n "$source_dir" ]] || source_dir=$value ;;
+            retro_rewind) if [[ "$value" == 1 ]]; then retro_rewind=1; fi ;;
+            retro_rewind_pack) [[ -n "$retro_pack" ]] || retro_pack=$value ;;
+        esac
+    done < "$work_dir/install.conf"
+    jobs_given=$jobs
+    source_given=$source_dir
+fi
+save_settings() {
+    cat > "$work_dir/install.conf" <<EOF
+# Written by steam-frame-install.sh after each install: the options --update reuses.
+frame=$frame
+frame_disc=$frame_disc
+jobs=$jobs_given
+source=$source_given
+retro_rewind=$retro_rewind
+retro_rewind_pack=$retro_pack
+EOF
+}
+
+# ---------------------------------------------------------------------------------------------
+# Talking to the Frame, and the versions involved. Up here because --update and --check read them
+# before anything is built.
+# One SSH connection for every step, so a password is asked for once.
+ssh_opts=(-o ControlMaster=auto -o "ControlPath=${XDG_RUNTIME_DIR:-/tmp}/wiicompiled-ssh-%C" -o ControlPersist=600)
+on_frame() {
+    # Runs a bash script, given on stdin, on the Frame; its arguments follow.
+    if [[ "$frame" == local ]]; then bash -s -- "$@"; else ssh "${ssh_opts[@]}" "$frame" bash -s -- "$@"; fi
+}
+read_on_frame() {
+    # Prints the contents of $1 on the Frame, with its whitespace removed, or nothing.
+    on_frame "$1" <<'EOF'
+[[ "$1" = /* ]] && f=$1 || f="$HOME/$1"
+tr -d '[:space:]' 2>/dev/null < "$f" || true
+EOF
+}
+frame_game_dir="devkit-game/$game_id"
+
+newest_release() {
+    curl -fsSL "https://api.github.com/repos/$repo/releases?per_page=1" |
+        sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1
+}
+
+# Retro Rewind's own versioning, as its update server publishes it.
+rr_server=https://update.rwfc.net/RetroRewind/
+rr_version_ok() { [[ "$1" =~ ^[0-9]+(\.[0-9]+)+$ ]]; }
+rr_newer() {
+    # True when version $1 is newer than $2 (dotted numbers, as 6.12.7).
+    [[ "$1" != "$2" && "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1)" == "$1" ]]
+}
+rr_fetch() { curl -fsSL --retry 2 "$1"; }
+rr_published_version() {
+    rr_fetch "${rr_server}RetroRewindVersion.txt" |
+        awk 'NF >= 4 && $1 ~ /^[0-9]+(\.[0-9]+)+$/ { print $1 }' | sort -V | tail -n 1
+}
+# Where the pack sits on the Frame: beside the disc, as the install below puts it.
+frame_pack_path_for() {
+    local disc=${1#\~/}
+    [[ -n "$disc" ]] || disc=wiicompiled/disc
+    if [[ "$disc" == */* ]]; then printf '%s/RetroRewind6\n' "$(dirname "$disc")"; else printf 'RetroRewind6\n'; fi
+}
+
+# ---------------------------------------------------------------------------------------------
+# --update and --check: what the Frame has against what is published. Nothing is built when the
+# Frame is already current, so an update that has nothing to do costs one web request.
+if [[ "$mode" != install ]]; then
+    [[ -n "$frame" ]] || fail "--$mode updates an install made by this script, and there is none in
+    $work_dir. Install first (see --help), or pass --work-dir and --frame."
+    say "Checking for an update"
+    reasons=()
+    if [[ -n "$source_dir" ]]; then
+        # A source install has no published version to compare against; it rebuilds what changed.
+        reasons+=("it was installed from the source tree in $source_dir, which is rebuilt as it is")
+    else
+        if [[ -z "$release" ]]; then
+            release=$(newest_release) ||
+                fail "could not reach github.com to ask for the newest release. Check this machine's
+    internet connection, then try again."
+            [[ -n "$release" ]] || fail "could not find the newest release on github.com/$repo"
+        fi
+        frame_installed_release=$(read_on_frame "$frame_game_dir/.release-tag") ||
+            fail "cannot reach $frame over SSH to ask which release it has."
+        if [[ "$frame_installed_release" == "$release" ]]; then
+            note "the Frame has release $release"
+        elif [[ -z "$frame_installed_release" ]]; then
+            reasons+=("the Frame does not say which release it has; release $release would be installed")
+        else
+            reasons+=("release $release (the Frame has $frame_installed_release)")
+        fi
+    fi
+    if (( retro_rewind )) && [[ -z "$retro_pack" ]]; then
+        rr_published=$(rr_published_version) ||
+            fail "could not reach Retro Rewind's update server (${rr_server})"
+        rr_installed=$(read_on_frame "$(frame_pack_path_for "$frame_disc")/version.txt")
+        if ! rr_version_ok "$rr_installed"; then
+            reasons+=("the Frame does not say which Retro Rewind pack it has")
+        elif rr_newer "$rr_published" "$rr_installed"; then
+            reasons+=("Retro Rewind $rr_published (the Frame has $rr_installed)")
+        else
+            note "the Frame has Retro Rewind $rr_installed"
+        fi
+    fi
+
+    if (( ${#reasons[@]} == 0 )); then
+        say "Up to date"
+        status uptodate "Up to date${release:+ (}${release}${release:+)}"
+        relaunch
+        exit 0
+    fi
+    note "an update is available:"
+    for line in "${reasons[@]}"; do note "  $line"; done
+    if [[ "$mode" == check ]]; then
+        status available "${reasons[0]}"
+        exit 0
+    fi
+    status running "Starting the update${release:+ to }$release"
+fi
+
 host_arch=$(uname -m)
 case "$host_arch" in
     x86_64|aarch64) ;;
@@ -344,16 +534,10 @@ fi
 # ---------------------------------------------------------------------------------------------
 # Retro Rewind: its pack, as its update server publishes it, and the Retro-WFC payload its online
 # play runs. Same steps as the Quest app (android/.../RetroRewindPack.kt and GameBuild.kt).
-rr_server=https://update.rwfc.net/RetroRewind/
+# Its server, versions and comparisons are up with the other version helpers.
 rr_pack="$work_dir/RetroRewind6"
 rr_payload="$work_dir/retro-wfc/binary/payload.RMCPD00.bin"
 
-rr_version_ok() { [[ "$1" =~ ^[0-9]+(\.[0-9]+)+$ ]]; }
-rr_newer() {
-    # True when version $1 is newer than $2 (dotted numbers, as 6.12.7).
-    [[ "$1" != "$2" && "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1)" == "$1" ]]
-}
-rr_fetch() { curl -fsSL --retry 2 "$1"; }
 rr_unpack_update() {
     # rr_unpack_update URL DEST: downloads a published zip and lays its RetroRewind6/ tree over DEST.
     # Only that tree is kept; the Riivolution XML beside it belongs to a Wii setup.
@@ -499,8 +683,31 @@ fi
 "$runtime" start "$container" >/dev/null
 note "container $container (mounts ${want_mounts//;/ })"
 
+build_progress() {
+    # Passes the build's output on, and keeps the game's status file at the stage it is on and how
+    # far through it ninja is, from the "[done/total]" lines it prints.
+    local line stage=Building percent last=-1
+    while IFS= read -r line; do
+        printf '%s\n' "$line"
+        [[ -n "${WIICOMPILED_UPDATE_STATUS:-}" ]] || continue
+        if [[ "$line" == "== "* ]]; then
+            stage=${line#== }
+            stage=${stage%% (*}
+            last=-1
+            status running "$stage"
+        elif [[ "$line" =~ ^\[([0-9]+)/([0-9]+)\] ]] && (( BASH_REMATCH[2] > 0 )); then
+            percent=$(( BASH_REMATCH[1] * 100 / BASH_REMATCH[2] ))
+            if (( percent != last )); then
+                last=$percent
+                status running "$stage, $percent% built"
+            fi
+        fi
+    done
+}
+
 say "Building (the first time takes hours under emulation; a log is in $work_dir/build.log)"
-if ! "$runtime" exec -e JOBS="$jobs" -e RETRO_REWIND="$retro_rewind" "$container" bash /work/container-build.sh 2>&1 | tee "$work_dir/build.log"; then
+if ! "$runtime" exec -e JOBS="$jobs" -e RETRO_REWIND="$retro_rewind" "$container" bash /work/container-build.sh 2>&1 |
+    tee "$work_dir/build.log" | build_progress; then
     fail "the build stopped; the end of $work_dir/build.log says why. Run the script again to resume.
     A machine that froze ran out of memory: pass a lower --jobs."
 fi
@@ -520,12 +727,7 @@ if [[ -z "$frame" ]]; then
 fi
 
 say "Installing on the Frame"
-# One SSH connection for every step, so a password is asked for once.
-ssh_opts=(-o ControlMaster=auto -o "ControlPath=${XDG_RUNTIME_DIR:-/tmp}/wiicompiled-ssh-%C" -o ControlPersist=600)
-on_frame() {
-    # Runs a bash script, given on stdin, on the Frame; its arguments follow.
-    if [[ "$frame" == local ]]; then bash -s -- "$@"; else ssh "${ssh_opts[@]}" "$frame" bash -s -- "$@"; fi
-}
+# on_frame and the SSH options it uses are up with the version helpers.
 copy_to_frame() {
     # copy_to_frame SOURCE DEST: DEST is absolute or relative to the Frame's home. A DEST ending in
     # / is an existing folder SOURCE goes into; otherwise SOURCE is copied to that new name.
@@ -564,6 +766,11 @@ EOF
     on_frame "$dir" "$id" <<'EOF'
 cd "$HOME/$1" && mv -f "$2.new" "$2" && chmod -R u=rwX,go=rX . && chmod 755 "$2"
 EOF
+    # Which release is on the Frame, for --check and the game's Updates tab. A source build has no
+    # release to name, and the stamp is removed so neither claims a release this is not.
+    on_frame "$dir" "$release" <<'EOF'
+cd "$HOME/$1" && if [[ -n "$2" ]]; then printf '%s\n' "$2" > .release-tag; else rm -f .release-tag; fi
+EOF
 }
 install_game "$game_id" "$work_dir/out"
 if (( retro_rewind )); then install_game RetroRewind "$work_dir/out-retro-rewind"; fi
@@ -594,13 +801,8 @@ fi
 
 if (( retro_rewind )); then
     # The pack goes beside the disc; copied again only when its version changed.
-    frame_pack_path="$(dirname "$frame_disc_path")/RetroRewind6"
-    [[ "$frame_disc_path" == */* ]] || frame_pack_path=RetroRewind6
-    frame_pack_version=$(on_frame "$frame_pack_path" <<'EOF'
-[[ "$1" = /* ]] && d=$1 || d="$HOME/$1"
-tr -d '[:space:]' 2>/dev/null < "$d/version.txt" || true
-EOF
-)
+    frame_pack_path=$(frame_pack_path_for "$frame_disc_path")
+    frame_pack_version=$(read_on_frame "$frame_pack_path/version.txt")
     local_pack_version=$(tr -d '[:space:]' 2>/dev/null < "$rr_pack/version.txt" || true)
     if [[ -z "$frame_pack_version" || "$frame_pack_version" != "$local_pack_version" ]]; then
         note "copying the Retro Rewind pack to $frame_pack_path (about 4 GB)"
@@ -672,9 +874,53 @@ esac
 register_game "$game_id" "$work_dir/out"
 if (( retro_rewind )); then register_game RetroRewind "$work_dir/out-retro-rewind"; fi
 
+# ---------------------------------------------------------------------------------------------
+# Updating from inside the game. Only an install on the Frame itself can do it, since that is the
+# only one with the build here; installed from a PC, the game's Updates tab says to update there.
+if [[ "$frame" == local ]]; then
+    note "setting up the game's Update button"
+    update_script="$work_dir/steam-frame-install.sh"
+    # A copy, so an update never runs from the source tree it is about to overwrite.
+    cp -f "$source_dir/Launcher/steam-frame-install.sh" "$update_script"
+    chmod +x "$update_script"
+    mkdir -p "$game_data" "$HOME/.config/systemd/user"
+    cat > "$game_data/update.conf" <<EOF
+# Written by steam-frame-install.sh: what the game's Updates tab runs. Remove this file to take the
+# Update button away, and the tab goes back to saying how to update from a PC.
+script=$update_script
+work_dir=$work_dir
+service=wiicompiled-update.service
+EOF
+    # Its own service, so the update outlives the game that started it: Steam stops the game's own
+    # process group when the game closes.
+    cat > "$HOME/.config/systemd/user/wiicompiled-update.service" <<EOF
+[Unit]
+Description=WiiCompiled VR update
+
+[Service]
+Type=oneshot
+Environment=WIICOMPILED_UPDATE_STATUS=$game_data/update-status
+Environment=WIICOMPILED_UPDATE_REQUEST=$game_data/update-request
+# Below the game in line for the processor and the storage, so it can keep running meanwhile.
+Nice=19
+IOSchedulingClass=idle
+ExecStart=$update_script --update --work-dir "$work_dir"
+EOF
+    systemctl --user daemon-reload >/dev/null 2>&1 ||
+        note "(systemd did not reload, so the Update button will not work until the Frame restarts)"
+fi
+
+save_settings
+
 say "Done"
-note "Start $game_id from your library in the headset. Settings: left shoulder button, VR tab."
+status done "Updated${release:+ to }${release}"
+if [[ "$mode" == update ]]; then
+    note "Updated${release:+ to }$release."
+else
+    note "Start $game_id from your library in the headset. Settings: left shoulder button, VR tab."
+fi
 if (( retro_rewind )); then note "RetroRewind is beside it, and shares its settings."; fi
+relaunch
 }
 
 main "$@" </dev/null

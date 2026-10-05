@@ -16,6 +16,13 @@ and nothing built from it may be distributed, so there is no ready-built game he
 - **Adaptive resolution** (`[vr] adaptive_resolution`, off by default): lowers the race's eye
   resolution down to 70% while frames fall behind, and raises it again once they keep up.
   Experimental and not yet tried in a race on the Frame. From Wiicompiled_VR-PLUS.
+- **Updating, from the PC or from inside the game.** `steam-frame-install.sh --update` reuses the
+  options the install was made with and builds nothing when the Frame already has the newest
+  release (and Retro Rewind pack); `--check` only reports. An install built on the Frame itself
+  (`--frame local`) gets an **Updates** tab in the settings panel: it checks for a new release and
+  builds it in the background while the game stays open, showing each step and how far the build
+  is. Close the game meanwhile and the update reopens it when done. Steam notifications were tried
+  for this and do not show on the Frame.
 - **`Launcher/frame-diagnostics.sh`** gathers the logs, crash files, settings, SteamVR logs and
   system state from the Frame into one archive, with a summary of how far startup got. Attach it
   to bug reports.
@@ -50,6 +57,10 @@ and nothing built from it may be distributed, so there is no ready-built game he
 Run the install command again; you can leave out `--disc`. Dawn's patches did not change, so it is
 not rebuilt. Most of the game is, since the translator changed as well as the runtime and renderer,
 so expect a longer update than usual. The build now also downloads Mbed TLS. Add `--retro-rewind` to get Retro Rewind too.
+
+frame-beta-2's script has no `--update`, so this one update is the full install command; it saves
+its options, and from then on `steam-frame-install.sh --update` is enough. To update from inside
+the game later, make this install on the Frame itself with `--frame local`.
 
 ## Known issues
 
