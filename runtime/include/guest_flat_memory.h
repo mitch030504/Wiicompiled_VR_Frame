@@ -71,10 +71,15 @@ bool IsActive();
 // accesses must use the checked Memory::* path.
 // Windows user mode and x86-64 always use a 4 KiB base page, so those builds
 // fold this to a compile-time false: it appears in every flat access and must
-// not become a hot-path load. Only AArch64, where the page size is a kernel
-// configuration (4/16/64 KiB), has to probe it at runtime.
+// not become a hot-path load. On AArch64 the page size is a kernel
+// configuration (4/16/64 KiB), so it is probed at runtime, except in the native
+// Steam Frame build: that build only runs on the headset, whose SteamOS kernel
+// uses 4 KiB pages, and Initialize() refuses to start on any other page size.
 #if defined(_WIN32) || defined(__x86_64__)
 #define MKW_GUEST_FLAT_FIXED_PAGE_SIZE 1
+#elif defined(MKW_HEADSET_STEAM_FRAME) && !defined(__ANDROID__)
+#define MKW_GUEST_FLAT_FIXED_PAGE_SIZE 1
+#define MKW_GUEST_FLAT_VERIFY_PAGE_SIZE 1
 #endif
 
 #if defined(MKW_GUEST_FLAT_FIXED_PAGE_SIZE)
