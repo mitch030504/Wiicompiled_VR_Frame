@@ -159,6 +159,7 @@ int g_vrFoveation = static_cast<int>(RuntimeConfigFile::VrFoveationLevelIndex(Ru
 bool g_vrEyeTrackedFoveation = RuntimeConfigFile::VrEyeTrackedFoveation();
 #endif
 bool g_vrRepeatFrames = RuntimeConfigFile::VrRepeatFrames();
+bool g_vrAdaptiveResolution = RuntimeConfigFile::VrAdaptiveResolution();
 bool g_vrFirstPerson = RuntimeConfigFile::VrFirstPerson(false);
 bool g_vrFirstPersonToggleClick = RuntimeConfigFile::VrFirstPersonToggleClick();
 // Set from any thread by the right-thumbstick click, applied on the game thread.
@@ -1568,6 +1569,18 @@ void DrawVrSettings() {
             "fill the gaps itself, which doubles the HUD and the menu screen as you turn your head "
             "(SteamVR on the Steam Frame). Applies immediately.");
     }
+#if !defined(_WIN32)
+    // Only the Vulkan backends show part of an eye image; the PC's copy whole eyes.
+    if (ImGui::Checkbox("Adaptive resolution (experimental)", &g_vrAdaptiveResolution)) {
+        RuntimeConfigFile::SetVrAdaptiveResolution(g_vrAdaptiveResolution);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(
+            "During races, lowers the eyes' resolution a step at a time, down to 70%%, while new "
+            "frames fall behind the game's 60 FPS, and raises it again once they keep up. Each change "
+            "rebuilds the foveation maps. Applies immediately.");
+    }
+#endif
     if (ImGui::Combo("VR frame interpolation (experimental)", &g_vrFrameInterpolationMode,
                      kVrInterpolationLabels.data(), static_cast<int>(kVrInterpolationLabels.size()))) {
         const auto target = kVrInterpolationFps[static_cast<size_t>(g_vrFrameInterpolationMode)];

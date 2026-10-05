@@ -744,10 +744,11 @@ public:
                 views[eye].pose.position = frame.xr_frame.views[eye].pose.position;
                 views[eye].fov = frame.xr_frame.views[eye].fov;
                 views[eye].subImage.swapchain = retained_swapchains_[eye].handle;
+                // The eyes may fill only a corner of the image ([vr] adaptive_resolution).
                 views[eye].subImage.imageRect = {
                     {0, 0},
-                    {static_cast<int32_t>(retained_swapchains_[eye].width),
-                     static_cast<int32_t>(retained_swapchains_[eye].height)}};
+                    {static_cast<int32_t>(std::min(frame.render_width[eye], retained_swapchains_[eye].width)),
+                     static_cast<int32_t>(std::min(frame.render_height[eye], retained_swapchains_[eye].height))}};
                 views[eye].subImage.imageArrayIndex = 0;
             }
             XrCompositionLayerProjection projection{XR_TYPE_COMPOSITION_LAYER_PROJECTION};

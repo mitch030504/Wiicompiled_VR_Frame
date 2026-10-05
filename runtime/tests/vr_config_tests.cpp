@@ -84,6 +84,9 @@ int main() {
     Require(Parse("[vr]\nrepeat_frames = false\n").vrRepeatFrames == false);
     Require(!Parse("[vr]\nrepeat_frames = 1\n").vrRepeatFrames.has_value());
     Require(!Parse("[vr]\n").vrRepeatFrames.has_value());
+    // [vr] adaptive_resolution: off unless set.
+    Require(Parse("[vr]\nadaptive_resolution = true\n").vrAdaptiveResolution == true);
+    Require(!Parse("[vr]\n").vrAdaptiveResolution.has_value());
 #if defined(MKW_HEADSET_STEAM_FRAME)
     Require(RuntimeConfigFile::kVrRepeatFramesDefault);
     Require(std::string_view(MKW_VR_REPEAT_FRAMES_DEFAULT_TOML) == "true");

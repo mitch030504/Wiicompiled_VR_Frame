@@ -30,6 +30,12 @@
 #   --frame-disc DIR  where the extracted disc goes on the Frame: absolute, or relative to the
 #                     Frame's home (default wiicompiled/disc; with --frame local, the disc folder
 #                     the build used)
+#   --retro-rewind    also build Retro Rewind and install it beside the base game. Its pack (about
+#                     4 GB) comes from Retro Rewind's own update server, as Wheel Wizard and the
+#                     Quest app fetch it, and later runs apply only the updates published since.
+#   --retro-rewind-pack DIR
+#                     use this RetroRewind6 folder instead of downloading one (implies
+#                     --retro-rewind); it is copied into the work dir and never changed
 #   -h, --help
 set -euo pipefail
 
@@ -65,6 +71,8 @@ release=""
 source_dir=""
 jobs=""
 frame_disc=""
+retro_rewind=0
+retro_pack=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -75,6 +83,8 @@ while [[ $# -gt 0 ]]; do
         --source) source_dir=$2; shift 2 ;;
         --jobs) jobs=$2; shift 2 ;;
         --frame-disc) frame_disc=$2; shift 2 ;;
+        --retro-rewind) retro_rewind=1; shift ;;
+        --retro-rewind-pack) retro_rewind=1; retro_pack=$2; shift 2 ;;
         -h|--help)
             if [[ -n "$script_dir" ]]; then usage; else echo "See the comment at the top of the script."; fi
             exit 0 ;;
@@ -332,6 +342,108 @@ if [[ -n "$disc_dir" ]]; then
 fi
 
 # ---------------------------------------------------------------------------------------------
+# Retro Rewind: its pack, as its update server publishes it, and the Retro-WFC payload its online
+# play runs. Same steps as the Quest app (android/.../RetroRewindPack.kt and GameBuild.kt).
+rr_server=https://update.rwfc.net/RetroRewind/
+rr_pack="$work_dir/RetroRewind6"
+rr_payload="$work_dir/retro-wfc/binary/payload.RMCPD00.bin"
+
+rr_version_ok() { [[ "$1" =~ ^[0-9]+(\.[0-9]+)+$ ]]; }
+rr_newer() {
+    # True when version $1 is newer than $2 (dotted numbers, as 6.12.7).
+    [[ "$1" != "$2" && "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1)" == "$1" ]]
+}
+rr_fetch() { curl -fsSL --retry 2 "$1"; }
+rr_unpack_update() {
+    # rr_unpack_update URL DEST: downloads a published zip and lays its RetroRewind6/ tree over DEST.
+    # Only that tree is kept; the Riivolution XML beside it belongs to a Wii setup.
+    local url=${1/http:\/\/update.rwfc.net:8000\//https://update.rwfc.net/} dest=$2
+    [[ "$url" == https://* ]] || fail "Retro Rewind's server gave a download that is not https: $url"
+    rm -rf "$work_dir/rr-download" "$work_dir/rr-download.zip"
+    mkdir -p "$work_dir/rr-download"
+    curl -fL --retry 2 --progress-bar -o "$work_dir/rr-download.zip" "$url" ||
+        fail "could not download $url"
+    unpack_archive "$work_dir/rr-download.zip" "$work_dir/rr-download" zip ||
+        fail "could not unpack $url"
+    [[ -d "$work_dir/rr-download/RetroRewind6" ]] || fail "$url holds no RetroRewind6 folder"
+    mkdir -p "$dest"
+    cp -a "$work_dir/rr-download/RetroRewind6/." "$dest/"
+    rm -rf "$work_dir/rr-download" "$work_dir/rr-download.zip"
+}
+
+if (( retro_rewind )); then
+    if [[ -n "$retro_pack" ]]; then
+        [[ -f "$retro_pack/Binaries/Code.pul" ]] ||
+            fail "$retro_pack is not a RetroRewind6 folder: it needs Binaries/Code.pul"
+        say "Copying your Retro Rewind pack"
+        rm -rf "$rr_pack.partial"
+        cp -a "$retro_pack" "$rr_pack.partial"
+        rm -rf "$rr_pack" && mv "$rr_pack.partial" "$rr_pack"
+    else
+        say "Checking Retro Rewind's published version"
+        feed=$(rr_fetch "${rr_server}RetroRewindVersion.txt") ||
+            fail "could not reach Retro Rewind's update server (${rr_server})"
+        # One update per line: <version> <url> <path> <description>, oldest first.
+        updates=$(awk 'NF >= 4 && $1 ~ /^[0-9]+(\.[0-9]+)+$/ { print $1, $2 }' <<<"$feed" | sort -V -k1,1)
+        [[ -n "$updates" ]] || fail "Retro Rewind's version list is empty"
+        latest=$(tail -n 1 <<<"$updates" | cut -d' ' -f1)
+        installed=$(tr -d '[:space:]' 2>/dev/null < "$rr_pack/version.txt" || true)
+        rr_version_ok "$installed" && [[ -f "$rr_pack/Binaries/Code.pul" ]] || installed=""
+        if [[ -z "$installed" ]]; then
+            say "Downloading Retro Rewind (about 4 GB)"
+            base=$(rr_fetch "${rr_server}RetroRewindInstall.txt" | tr -d '[:space:]') ||
+                fail "Retro Rewind's server did not say where its download is"
+            rm -rf "$rr_pack.partial"
+            rr_unpack_update "$base" "$rr_pack.partial" </dev/null
+            [[ -f "$rr_pack.partial/Binaries/Code.pul" && -f "$rr_pack.partial/version.txt" ]] ||
+                fail "Retro Rewind's download did not contain the pack"
+            rm -rf "$rr_pack" && mv "$rr_pack.partial" "$rr_pack"
+            installed=$(tr -d '[:space:]' < "$rr_pack/version.txt")
+        fi
+        if rr_newer "$latest" "$installed"; then
+            deletions=$(rr_fetch "${rr_server}RetroRewindDelete.txt") ||
+                fail "could not read Retro Rewind's deletion list"
+            previous=$installed
+            while read -r version url; do
+                rr_newer "$version" "$previous" || continue
+                say "Applying Retro Rewind $version"
+                rr_unpack_update "$url" "$rr_pack" </dev/null
+                # Each update's deletions follow it, before the next update can put a file back.
+                # Only paths inside the pack are touched, and none that climb out of it.
+                while read -r dversion dpath; do
+                    rr_version_ok "$dversion" || continue
+                    rr_newer "$dversion" "$previous" || continue
+                    rr_newer "$dversion" "$version" && continue
+                    dpath=${dpath//\\//}
+                    dpath=${dpath#/}
+                    [[ "$dpath" == RetroRewind6/?* && "/$dpath/" != */../* ]] || continue
+                    rm -rf "${rr_pack:?}/${dpath#RetroRewind6/}"
+                done <<<"$deletions"
+                previous=$version
+            done <<<"$updates"
+            # Written last, so an interrupted update runs again next time.
+            printf '%s\n' "$latest" > "$rr_pack/version.txt"
+        fi
+        note "Retro Rewind $(tr -d '[:space:]' < "$rr_pack/version.txt")"
+    fi
+
+    # translate-mod builds the payload into the game; without it, going online jumps into code that
+    # was never translated. Fetched on every build, as the Quest app does.
+    say "Downloading the Retro-WFC payload for online play"
+    mkdir -p "$(dirname "$rr_payload")"
+    if curl -fsS --retry 2 --max-filesize 16777216 -H 'Accept-Encoding: identity' \
+        -o "$rr_payload.partial" 'https://rwfc.net/api/wfc/payload?g=RMCPD00'; then
+        mv "$rr_payload.partial" "$rr_payload"
+    elif [[ -f "$rr_payload" ]]; then
+        rm -f "$rr_payload.partial"
+        note "rwfc.net did not answer; using the payload from the last build"
+    else
+        fail "Retro Rewind's online play needs the Retro-WFC payload from rwfc.net, which could not be
+    downloaded. Check this machine's internet connection, then run the script again."
+    fi
+fi
+
+# ---------------------------------------------------------------------------------------------
 say "Preparing the ARM64 build container"
 cat > "$work_dir/container-build.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -359,7 +471,13 @@ echo "== Dawn (built once; reused until a release changes its patches)"
 Launcher/build-dawn-linux.sh --work-dir /work/dawn --cc "$T/clang" --cxx "$T/clang++" \
     --cmake "$T/cmake" --ninja "$T/ninja" --jobs "$JOBS"
 echo "== The game"
-Launcher/local-build.sh --output-dir /work/out --cc "$T/clang" --cxx "$T/clang++" --fuse-ld lld \
+products=(--output-dir /work/out)
+if [[ "$RETRO_REWIND" == 1 ]]; then
+    # Both products from one translation: the base game in out/, Retro Rewind in out-retro-rewind/.
+    products=(--profile both --output-dir /work/out-retro-rewind --base-output-dir /work/out
+        --retro-rewind-package-dir /work/RetroRewind6 --retro-wfc-offline-dir /work/retro-wfc)
+fi
+Launcher/local-build.sh "${products[@]}" --cc "$T/clang" --cxx "$T/clang++" --fuse-ld lld \
     --cmake "$T/cmake" --ninja "$T/ninja" --dotnet /work/dotnet/dotnet --parallel "$JOBS" \
     --openxr --dawn-package /work/dawn/package --headset steam_frame
 EOF
@@ -382,12 +500,17 @@ fi
 note "container $container (mounts ${want_mounts//;/ })"
 
 say "Building (the first time takes hours under emulation; a log is in $work_dir/build.log)"
-if ! "$runtime" exec -e JOBS="$jobs" "$container" bash /work/container-build.sh 2>&1 | tee "$work_dir/build.log"; then
+if ! "$runtime" exec -e JOBS="$jobs" -e RETRO_REWIND="$retro_rewind" "$container" bash /work/container-build.sh 2>&1 | tee "$work_dir/build.log"; then
     fail "the build stopped; the end of $work_dir/build.log says why. Run the script again to resume.
     A machine that froze ran out of memory: pass a lower --jobs."
 fi
 [[ -x "$work_dir/out/$game_id" ]] || fail "the build finished without $work_dir/out/$game_id"
 note "built $work_dir/out/$game_id"
+if (( retro_rewind )); then
+    [[ -x "$work_dir/out-retro-rewind/RetroRewind" ]] ||
+        fail "the build finished without $work_dir/out-retro-rewind/RetroRewind"
+    note "built $work_dir/out-retro-rewind/RetroRewind"
+fi
 
 # ---------------------------------------------------------------------------------------------
 if [[ -z "$frame" ]]; then
@@ -427,18 +550,23 @@ if [[ "$frame" != local ]] && command -v rsync >/dev/null 2>&1 &&
     frame_rsync=yes
 fi
 
-game_dir="devkit-game/$game_id"
-on_frame "$game_dir" <<'EOF'
+install_game() {
+    # install_game ID OUT: the built game in OUT goes to ~/devkit-game/ID on the Frame.
+    local id=$1 out=$2 dir="devkit-game/$1"
+    on_frame "$dir" <<'EOF'
 mkdir -p "$HOME/$1"
 EOF
-note "copying the game to ~/$game_dir"
-(cd "$work_dir/out" && find . -mindepth 1 -maxdepth 1 ! -name "$game_id" -print0) |
-    while IFS= read -r -d '' item; do copy_to_frame "$work_dir/out/${item#./}" "$game_dir/"; done
-# The executable goes in under a new name and is moved into place: that works while it runs.
-copy_to_frame "$work_dir/out/$game_id" "$game_dir/$game_id.new"
-on_frame "$game_dir" "$game_id" <<'EOF'
+    note "copying $id to ~/$dir"
+    (cd "$out" && find . -mindepth 1 -maxdepth 1 ! -name "$id" -print0) |
+        while IFS= read -r -d '' item; do copy_to_frame "$out/${item#./}" "$dir/"; done
+    # The executable goes in under a new name and is moved into place: that works while it runs.
+    copy_to_frame "$out/$id" "$dir/$id.new"
+    on_frame "$dir" "$id" <<'EOF'
 cd "$HOME/$1" && mv -f "$2.new" "$2" && chmod -R u=rwX,go=rX . && chmod 755 "$2"
 EOF
+}
+install_game "$game_id" "$work_dir/out"
+if (( retro_rewind )); then install_game RetroRewind "$work_dir/out-retro-rewind"; fi
 
 # The Frame's disc folder, absolute or relative to its home.
 if [[ -z "$frame_disc" ]]; then
@@ -464,6 +592,45 @@ rm -rf "$d" && mv "$d.partial" "$d"
 EOF
 fi
 
+if (( retro_rewind )); then
+    # The pack goes beside the disc; copied again only when its version changed.
+    frame_pack_path="$(dirname "$frame_disc_path")/RetroRewind6"
+    [[ "$frame_disc_path" == */* ]] || frame_pack_path=RetroRewind6
+    frame_pack_version=$(on_frame "$frame_pack_path" <<'EOF'
+[[ "$1" = /* ]] && d=$1 || d="$HOME/$1"
+tr -d '[:space:]' 2>/dev/null < "$d/version.txt" || true
+EOF
+)
+    local_pack_version=$(tr -d '[:space:]' 2>/dev/null < "$rr_pack/version.txt" || true)
+    if [[ -z "$frame_pack_version" || "$frame_pack_version" != "$local_pack_version" ]]; then
+        note "copying the Retro Rewind pack to $frame_pack_path (about 4 GB)"
+        on_frame "$frame_pack_path" <<'EOF'
+[[ "$1" = /* ]] && d=$1 || d="$HOME/$1"
+mkdir -p "$(dirname "$d")" && rm -rf "$d.partial"
+EOF
+        copy_to_frame "$rr_pack" "$frame_pack_path.partial"
+        on_frame "$frame_pack_path" <<'EOF'
+[[ "$1" = /* ]] && d=$1 || d="$HOME/$1"
+rm -rf "$d" && mv "$d.partial" "$d"
+EOF
+    fi
+    note "pointing Retro Rewind at its pack"
+    on_frame "$frame_pack_path" <<'EOF'
+[[ "$1" = /* ]] && d=$1 || d="$HOME/$1"
+config="$HOME/.local/share/WiiCompiled/Config.toml"
+mkdir -p "$(dirname "$config")"
+if [[ ! -f "$config" ]]; then
+    printf '[paths]\nretro_rewind_root = "%s"\n' "$d" > "$config"
+elif ! grep -q '^retro_rewind_root *=' "$config"; then
+    if grep -q '^\[paths\]' "$config"; then
+        sed -i "/^\[paths\]/a retro_rewind_root = \"$d\"" "$config"
+    else
+        printf '\n[paths]\nretro_rewind_root = "%s"\n' "$d" >> "$config"
+    fi
+fi
+EOF
+fi
+
 note "pointing the game at the disc"
 on_frame "$frame_disc_path" <<'EOF'
 [[ "$1" = /* ]] && d=$1 || d="$HOME/$1"
@@ -483,7 +650,10 @@ EOF
 # Steam's library: through Valve's devkit tools when Frame Control or the Devkit Client put them on
 # the Frame, as a Steam Linux Runtime ARM64 title (Steam starts an ARM64 program natively).
 # Registering again is harmless and refreshes the entry, as Valve's Devkit Client does each upload.
-registered=$(on_frame "$game_dir" "$game_id" <<'EOF'
+register_game() {
+    # register_game ID OUT: adds ~/devkit-game/ID to Steam's library, or says how to.
+    local id=$1 out=$2 dir="devkit-game/$1" registered
+registered=$(on_frame "$dir" "$id" <<'EOF'
 if [[ ! -f "$HOME/devkit-utils/steam-client-create-shortcut" ]]; then echo no-tools; exit 0; fi
 parms=$(printf '{"gameid": "%s", "directory": "%s", "argv": ["%s"], "env": {}, "settings": {"steam_play": "0", "compat_tool": "SteamLinuxRuntime_4-arm64"}, "clear_settings": true, "force_appid": "", "lepton_args": ""}' "$2" "$HOME/$1" "$2")
 reply=$(python3 "$HOME/devkit-utils/steam-client-create-shortcut" --parms "$parms" 2>/dev/null | tail -n 1)
@@ -491,16 +661,20 @@ case "$reply" in *'"success"'*) echo added ;; *) echo "failed $reply" ;; esac
 EOF
 )
 case "$registered" in
-    added) note "it is in your Steam library" ;;
+    added) note "$id is in your Steam library" ;;
     no-tools|failed*)
         [[ "$registered" == failed* ]] && note "Steam did not take the shortcut: ${registered#failed }"
-        note "Add it to your Steam library once: in Frame Control, Send to Frame the folder"
-        note "  $work_dir/out (name it $game_id), or on the Frame in Desktop Mode, Steam >"
-        note "  Add a Non-Steam Game > ~/$game_dir/$game_id. Later runs of this script keep it updated." ;;
+        note "Add $id to your Steam library once: in Frame Control, Send to Frame the folder"
+        note "  $out (name it $id), or on the Frame in Desktop Mode, Steam >"
+        note "  Add a Non-Steam Game > ~/$dir/$id. Later runs of this script keep it updated." ;;
 esac
+}
+register_game "$game_id" "$work_dir/out"
+if (( retro_rewind )); then register_game RetroRewind "$work_dir/out-retro-rewind"; fi
 
 say "Done"
 note "Start $game_id from your library in the headset. Settings: left shoulder button, VR tab."
+if (( retro_rewind )); then note "RetroRewind is beside it, and shares its settings."; fi
 }
 
 main "$@" </dev/null

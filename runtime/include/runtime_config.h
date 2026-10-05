@@ -101,6 +101,7 @@ struct RuntimeUserConfig {
     std::optional<std::string> vrFoveation;
     std::optional<bool> vrEyeTrackedFoveation;
     std::optional<bool> vrRepeatFrames;
+    std::optional<bool> vrAdaptiveResolution;
     std::optional<std::string> vrRecenterKey;
     std::optional<float> vrLeanBackDegrees;
     // F10 > Diagnostics: OpenXR pacing and presentation logging in console.log.
@@ -607,6 +608,10 @@ inline void EnsureConfigFile() {
               "# Submit the last frame again for each refresh the game has no new\n"
               "# frame for, so the runtime does not fill those refreshes itself. Live.\n"
               "repeat_frames = " MKW_VR_REPEAT_FRAMES_DEFAULT_TOML "\n"
+              "# Lower the race's eye resolution, down to 70% of render_scale, while\n"
+              "# new frames fall behind the game's 60 FPS, and raise it again once\n"
+              "# they keep up. Experimental; the Steam Frame and the Quest. Live.\n"
+              "adaptive_resolution = false\n"
               "render_scale = " MKW_VR_RENDER_SCALE_DEFAULT_TEXT "\n"
               "world_units_per_meter = 500.0\n"
               "hud_distance_meters = 2.0\n"
@@ -928,6 +933,7 @@ inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
     }
     config.vrEyeTrackedFoveation = FindConfigValue<bool>(document, "vr", "eye_tracked_foveation");
     config.vrRepeatFrames = FindConfigValue<bool>(document, "vr", "repeat_frames");
+    config.vrAdaptiveResolution = FindConfigValue<bool>(document, "vr", "adaptive_resolution");
     if (auto value = FindConfigValue<std::string>(document, "vr", "mirror_view");
         value && IsSupportedVrMirrorView(*value)) {
         config.vrMirrorView = *value;
@@ -1343,6 +1349,11 @@ inline bool SetVrFoveation(std::string value) {
 inline bool SetVrRepeatFrames(bool value) {
     Mutable().vrRepeatFrames = value;
     return WriteSetting("vr", "repeat_frames", value ? "true" : "false");
+}
+
+inline bool SetVrAdaptiveResolution(bool value) {
+    Mutable().vrAdaptiveResolution = value;
+    return WriteSetting("vr", "adaptive_resolution", value ? "true" : "false");
 }
 
 inline bool SetVrEyeTrackedFoveation(bool value) {
@@ -1878,6 +1889,10 @@ inline std::string VrFoveation(std::string fallback = kVrFoveationDefault) {
 
 inline bool VrRepeatFrames(bool fallback = kVrRepeatFramesDefault) {
     return Get().vrRepeatFrames.value_or(fallback);
+}
+
+inline bool VrAdaptiveResolution(bool fallback = false) {
+    return Get().vrAdaptiveResolution.value_or(fallback);
 }
 
 inline bool VrEyeTrackedFoveation(bool fallback = kVrEyeTrackedFoveationDefault) {

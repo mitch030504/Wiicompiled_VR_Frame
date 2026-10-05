@@ -150,8 +150,11 @@ public:
     for (uint32_t i = 0; i < images; ++i) {
       const auto& eye = sources[i];
       const auto& target = targets[i];
-      if (!eye.texture || eye.size.width != target.width || eye.size.height != target.height ||
-          !CopyCompatible(VkFormat(eye.format), target.dxgiFormat)) return false;
+      // An eye smaller than its target goes in the target's top-left corner, which is all the
+      // projection layer shows of it; the panel and the virtual screen are always full size.
+      const bool fits = i < count ? eye.size.width <= target.width && eye.size.height <= target.height
+                                  : eye.size.width == target.width && eye.size.height == target.height;
+      if (!eye.texture || !fits || !CopyCompatible(VkFormat(eye.format), target.dxgiFormat)) return false;
       const uint64_t image = reinterpret_cast<uintptr_t>(target.resource);
       auto it = std::find_if(imports.begin(), imports.end(), [&](const Import& entry) { return entry.image == image; });
       if (it == imports.end()) {
@@ -179,7 +182,7 @@ public:
       wgpu::TexelCopyTextureInfo source, destination;
       source.texture = *sources[i].texture;
       destination.texture = active[i];
-      wgpu::Extent3D size{targets[i].width, targets[i].height, 1};
+      wgpu::Extent3D size{sources[i].size.width, sources[i].size.height, 1};
       encoder.CopyTextureToTexture(&source, &destination, &size);
     }
     encoded = true;

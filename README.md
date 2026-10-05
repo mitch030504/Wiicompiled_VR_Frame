@@ -90,6 +90,12 @@ curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/op
   It is added to your Steam library through Valve's devkit tools in `~/devkit-utils`, which Frame
   Control and Valve's Devkit Client put there. Without them, the script says how to add it once
   yourself. Steam must be running on the Frame for this step.
+- Add `--retro-rewind` to also build [Retro Rewind](https://wiki.tockdom.com/wiki/Retro_Rewind).
+  The script downloads its pack (about 4 GB) from Retro Rewind's own update server, as Wheel Wizard
+  does, and later runs apply only the updates published since. It also fetches the Retro-WFC
+  payload online play needs. On the Frame, Retro Rewind goes to `~/devkit-game/RetroRewind/` and
+  its pack to `~/wiicompiled/RetroRewind6`, and it shares WiiCompiled's settings.
+  `--retro-rewind-pack DIR` uses a RetroRewind6 folder you already have instead.
 - `--help` lists every option. From a downloaded release, run `Launcher/steam-frame-install.sh`
   with the same options: it then builds that release's source.
 
@@ -117,6 +123,7 @@ settings back when it closes.
 | `[vr] foveation` | `medium` | `off` shades every pixel and costs the most. See [Known issues](#known-issues) if images double. |
 | `[vr] repeat_frames` | `true` (default) | Without it SteamVR halves the game's rate and fills refreshes itself. |
 | `[vr] frame_interpolation_fps` | `0` | Rendering in-between frames needs 120 eye pairs a second, which made things worse on the Frame. |
+| `[vr] adaptive_resolution` | `false` (default) | Experimental and untested on the Frame. When on, races drop to as little as 70% of `render_scale` while new frames fall behind 60 FPS, and climb back once they keep up. Each step rebuilds the foveation maps; `console.log` records every change as `OpenXR: adaptive resolution`. |
 | `[video] resolution_multiplier` | `2` | The game's own frame, which the eyes are made from. 4x is far too heavy for the Frame's GPU. |
 
 Keep SteamVR's refresh rate at 120 Hz. Motion Smoothing makes no difference to this game.
