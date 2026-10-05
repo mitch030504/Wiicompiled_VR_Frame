@@ -1390,6 +1390,51 @@ TEST_F(GXFifoTest, BlendMode_Logic) {
   EXPECT_EQ(g_gxState.blendOp, GX_LO_XOR);
 }
 
+TEST_F(GXFifoTest, GenMode_FirstZeroWriteDecodesAndRepeatDeduplicates) {
+  reset_gx_state();
+  const auto before = g_gxState.pipelineStateGeneration;
+  decode_fifo(bp_cmd(0, 0));
+  EXPECT_EQ(g_gxState.numTevStages, 1u);
+  EXPECT_EQ(g_gxState.cullMode, GX_CULL_NONE);
+  EXPECT_EQ(g_gxState.numChans, 0u);
+  EXPECT_EQ(g_gxState.numTexGens, 0u);
+  EXPECT_EQ(g_gxState.numIndStages, 0u);
+  EXPECT_EQ(g_gxState.bpRegCache[0], 0u);
+  EXPECT_NE(g_gxState.pipelineStateGeneration, before);
+  const auto decoded = g_gxState.pipelineStateGeneration;
+  decode_fifo(bp_cmd(0, 0));
+  EXPECT_EQ(g_gxState.pipelineStateGeneration, decoded);
+}
+
+TEST_F(GXFifoTest, GenMode_FirstMaskedWritePreservesZeroResetBits) {
+  for (const u32 mask : {0u, 1u << 10}) {
+    reset_gx_state();
+    const auto before = g_gxState.pipelineStateGeneration;
+    decode_fifo(bp_cmd(0xFE, mask));
+    decode_fifo(bp_cmd(0, 0xFFFFFF));
+    EXPECT_EQ(g_gxState.bpRegCache[0], mask);
+    EXPECT_EQ(g_gxState.bpRegCache[0xFE], 0xFFFFFFu);
+    EXPECT_EQ(g_gxState.numTevStages, mask ? 2u : 1u);
+    EXPECT_EQ(g_gxState.cullMode, GX_CULL_NONE);
+    EXPECT_NE(g_gxState.pipelineStateGeneration, before);
+    decode_fifo(bp_cmd(0, 0));
+    EXPECT_EQ(g_gxState.numTevStages, 1u);
+    EXPECT_EQ(g_gxState.bpRegCache[0], 0u);
+  }
+}
+
+TEST_F(GXFifoTest, GenMode_ColdSingleStageApiSetupDecodes) {
+  reset_gx_state();
+  GXSetNumTevStages(1);
+  GXSetNumTexGens(0);
+  GXSetNumChans(0);
+  GXSetCullMode(GX_CULL_NONE);
+  const auto bytes = flush_and_capture();
+  decode_fifo(bytes);
+  EXPECT_EQ(g_gxState.numTevStages, 1u);
+  EXPECT_EQ(g_gxState.cullMode, GX_CULL_NONE);
+}
+
 TEST_F(GXFifoTest, BpMask_AppliesOnlyToNextWrite) {
   std::vector<u8> bytes;
   auto mask = bp_cmd(0xFE, 1u << 19);
