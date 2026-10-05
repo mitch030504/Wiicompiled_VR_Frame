@@ -2861,6 +2861,7 @@ TEST_F(GXFifoTest, DrawTopologyTemplatesPreserveExactGxIndexOrder) {
   const auto decodeAndReadIndices = [&](GXPrimitive primitive, u16 count) {
     std::vector<u8> fifo;
     append_test_draw(fifo, primitive, count);
+    aurora::gfx::testing::reset_vertex_push_record();
     decode_fifo(fifo);
     return aurora::gfx::testing::last_pushed_indices();
   };
@@ -2871,7 +2872,7 @@ TEST_F(GXFifoTest, DrawTopologyTemplatesPreserveExactGxIndexOrder) {
   g_gxState.stateDirty = true;
   EXPECT_EQ(decodeAndReadIndices(GX_TRIANGLEFAN, 5), (std::vector<u16>{0, 1, 2, 0, 2, 3, 0, 3, 4}));
   g_gxState.stateDirty = true;
-  EXPECT_EQ(decodeAndReadIndices(GX_TRIANGLEFAN, 2), (std::vector<u16>{0, 1}));
+  EXPECT_EQ(decodeAndReadIndices(GX_TRIANGLEFAN, 2), (std::vector<u16>{}));
   g_gxState.stateDirty = true;
   EXPECT_EQ(decodeAndReadIndices(GX_TRIANGLESTRIP, 6), (std::vector<u16>{0, 1, 2, 2, 1, 3, 2, 3, 4, 4, 3, 5}));
   g_gxState.stateDirty = true;
