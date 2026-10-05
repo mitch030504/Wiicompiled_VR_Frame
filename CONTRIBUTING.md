@@ -39,9 +39,19 @@ That's ok, but rules apply:
   game (hardware comparison, logs, whatever fits).
 - Review feedback. It's about the code, not about you ;).
 
+## Porting from other projects
+
+This fork takes fixes from upstream WiiCompiled and other forks. When you port one:
+
+- name the source repository and commit in the commit message ("Ported from owner/repo abc1234");
+- keep the original author on the commit when the change is taken as is, and say what you changed
+  when it is adapted;
+- add a line to [`CREDITS.md`](CREDITS.md), and check the source's license is compatible with
+  GPL v3.0.
+
 ## Bug reports
 
-See the FAQ in the [README](README.md)
+See [Reporting problems](README.md#reporting-problems) in the README.
 
 ## A note on related projects
 

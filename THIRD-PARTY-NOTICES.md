@@ -88,6 +88,19 @@ wheel geometry and guest reads in `runtime/src/vr/mkw_vr_first_person.cpp` and
 (`runtime/include/physical_wheel.h`, `runtime/src/physical_wheel.cpp` and their test). The files
 carry that attribution in their headers.
 
+### Mozilla CA certificate bundle - MPL-2.0
+
+The root certificates Mbed TLS verifies servers against on Linux, macOS and Android
+(`runtime/assets/certs/cacert.pem`), copied next to the built game. Extracted from Mozilla's
+`certdata.txt` and redistributed unmodified as curl's CA bundle.
+Source: <https://curl.se/docs/caextract.html>
+
+### Code ported from other WiiCompiled forks - GPL-3.0-or-later
+
+Fixes taken from other GPL-3.0 forks of WiiCompiled (heurazy's Wiicompiled_VR-PLUS, KartPad,
+DarthMDev, Strikers-WiiCompiled, rooklz and wiicompiled-nx) are listed with their authors and
+source commits in [`CREDITS.md`](CREDITS.md).
+
 ### pugixml - MIT
 
 Copyright (c) 2006-2025 Arseny Kapoulkine.

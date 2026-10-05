@@ -357,6 +357,9 @@ Unraid keeps `/usr/local/bin` in memory, so repeat this after a reboot.
   Vulkan hook and density map ABIs that Aurora compiles against.
 - **Headset only.** The game neither shows nor finishes rendering a desktop window, and is compiled
   for the Frame's Cortex-X4 cores (`-mcpu=cortex-x4`, overridable with `--cpu`).
+- **Tuned for ARM64.** The Frame's kernel uses 4 KiB memory pages, so the `steam_frame` build drops
+  the page-size check from every translated memory access; it checks the page size once at startup
+  and refuses to start if it is ever different. Audio mixing uses NEON on ARM64.
 - **Every refresh from the game.** The game draws 60 frames a second. When it handed SteamVR only
   those, SteamVR ran it at half rate and made up every other refresh itself, even with Motion
   Smoothing off. With `[vr] repeat_frames`, the pacing thread waits for the next frame until 1.5 ms
@@ -384,8 +387,8 @@ play. [`docs/quest-port.md`](docs/quest-port.md) covers the Android build.
 
 Open an issue on this repository with:
 - what you did and what you saw (which eye, where in the picture, racing or menus);
-- the run's `console.log` (and `crash_sigsegv.txt` after a crash) from
-  `~/.local/share/WiiCompiled/Logs/` on the Frame;
+- the archive [`frame-diagnostics.sh`](#troubleshooting) makes, or at least the run's `console.log`
+  (and `crash_sigsegv.txt` after a crash) from `~/.local/share/WiiCompiled/Logs/` on the Frame;
 - or, for a build problem, the last lines of the failing step.
 
 Problems that also happen on a PC or a Quest belong upstream, in
@@ -394,7 +397,10 @@ Problems that also happen on a PC or a Quest belong upstream, in
 ## From upstream
 
 The fork keeps everything [WiiCompiled OpenXR VR](https://github.com/iChris4/Wiicompiled_VR) does;
-its README covers it in full. In the headset that means:
+its README covers it in full. On top of that it carries fixes taken from
+[WiiCompiled](https://github.com/patchzyy/Wiicompiled) itself and from other WiiCompiled forks, such
+as Linux TLS for online play, faster disc reads, safer settings saves and NEON audio mixing; each is
+listed with its author in [`CREDITS.md`](CREDITS.md). In the headset that means:
 
 - Menus and unsupported scenes on a head-locked virtual screen, and races in immersive stereo.
 - A first-person cockpit whose steering wheel or handlebar turns with your steering, and hand
@@ -436,13 +442,20 @@ sharing.
 
 **Can it run on other SteamOS or Linux ARM64 devices?**
 Leave out `--headset steam_frame` and pass `--cpu` for your CPU to get a generic Linux VR build;
-it needs an OpenXR runtime with `XR_KHR_vulkan_enable2`. Untested.
+it needs an OpenXR runtime with `XR_KHR_vulkan_enable2`. Untested. The generic build also works on
+kernels with memory pages larger than 4 KiB, which the `steam_frame` build refuses.
 
 ## AI usage
 AI coding tools were used during development of this project. 
 All translated output is verified against real hardware behavior and most importantly, physics accuracy is proven synced across Wii, Dolphin, and WiiCompiled (see FAQ). 
 
 ## Credits
+
+This fork stands on other people's work: WiiCompiled by patchzyy, WiiCompiled OpenXR VR by iChris4,
+and fixes ported from heurazy's Wiicompiled_VR-PLUS, Chris Sotraidis's KartPad, DarthMDev,
+BlackAndBlue95's Strikers-WiiCompiled, rooklz and nx-mod's wiicompiled-nx. [`CREDITS.md`](CREDITS.md)
+says what came from whom. In short:
+
 - **inkwreck** - making the logo
 - **[aurora](https://github.com/encounter/aurora)** - the GX rendering/windowing backend this
   project's whole graphics layer sits on. MIT licensed.
@@ -463,8 +476,8 @@ All translated output is verified against real hardware behavior and most import
 - **[Wheel Wizard](https://github.com/TeamWheelWizard/WheelWizard)** - the mod manager this
   project integrates with as a launch backend.
 - **[nod](https://github.com/encounter/nod)** - nodtool, the disc image extractor.
-- **[DolphinXR](https://github.com/iChris4/dolphinXR)** - the Steam Frame controller profile's
-  input paths.
+- **[DolphinXR](https://github.com/iChris4/dolphinXR)** - the OpenXR Wii Remote input design, and
+  the Steam Frame controller profile's input paths.
 - **[Frame Control](https://github.com/saphid/frame-control)** by saphid - installing the game into
   the Frame's Steam library, and its notes on how the Frame's software fits together.
 - Everyone in the static recompilation community.
