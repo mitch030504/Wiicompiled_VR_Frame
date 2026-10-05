@@ -93,6 +93,20 @@ curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/op
 - `--help` lists every option. From a downloaded release, run `Launcher/steam-frame-install.sh`
   with the same options: it then builds that release's source.
 
+**What it changes on the Frame.** SteamOS's system is read-only and every update replaces it, so the
+installer installs no packages there, needs no root, and never switches the read-only mode off.
+Everything it puts on the Frame is in your home folder, where it survives SteamOS updates:
+
+| Where | What |
+| --- | --- |
+| `~/devkit-game/WiiCompiled/` | the game |
+| `~/wiicompiled/disc/` | your extracted disc (`--frame-disc` puts it elsewhere in your home folder or on a mounted card) |
+| `~/.local/share/WiiCompiled/` | `Config.toml`, saves and logs, written by the game itself |
+| Steam's library | the **WiiCompiled** shortcut, made through Valve's devkit tools in `~/devkit-utils` |
+
+To remove it, delete the shortcut from the library and those three folders (the last holds your
+saves).
+
 ### 3. Play
 
 Start **WiiCompiled** from the library in the headset. Open the settings panel with the left
@@ -298,8 +312,10 @@ is open.
 
 ## Other ways to build
 
-**On the Frame itself.** SteamOS's root file system is read-only, but it ships podman, and the
-install script runs there too. Over SSH (`ssh steamos@<frame-ip>`), or in a Desktop Mode terminal:
+**On the Frame itself.** This needs podman, which has to come with SteamOS: its system is read-only,
+and anything installed into it with `pacman` (after switching the read-only mode off) is gone at the
+next update, so don't. The script checks and says so if it is missing; then build on a PC as above.
+If it is there, run the script over SSH (`ssh steamos@<frame-ip>`) or in a Desktop Mode terminal:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/openxr-work/Launcher/steam-frame-install.sh \
@@ -307,7 +323,10 @@ curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/op
 ```
 
 It is native ARM64, so no emulation, but the Frame has less memory and cooling than a PC; keep it
-on its charger. The game then reads the disc straight from `~/wiicompiled-frame/disc`. By hand, the
+on its charger. Everything stays in your home folder: the container image and its packages in
+podman's storage (`~/.local/share/containers`), the toolchain, Dawn and the build in
+`~/wiicompiled-frame` (about 20 GB), and the game reads the disc straight from
+`~/wiicompiled-frame/disc`. By hand, the
 steps under [Building by hand](#building-by-hand) work the same in a container started without
 `--platform linux/arm64`, with `nodtool-linux-aarch64` in place of `nodtool-linux-x86_64`.
 

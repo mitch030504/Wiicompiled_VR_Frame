@@ -13,6 +13,11 @@
 # is built in a Debian ARM64 container, under qemu emulation on x86_64; the first build takes a few
 # hours there, mostly compiling Dawn, and later ones reuse it.
 #
+# SteamOS's system is read-only and replaced by every update, so nothing here installs into it or
+# needs root on the Frame: the game, the disc, its settings and the Steam shortcut all live in the
+# home folder (~/devkit-game/WiiCompiled, ~/wiicompiled/disc, ~/.local/share/WiiCompiled), where
+# they survive SteamOS updates.
+#
 # Options:
 #   --disc PATH       your clean PAL RMCP01 disc: an ISO, WBFS or RVZ image (or WIA, CISO, GCZ, NFS,
 #                     TGC), a .zip or .7z holding one, or an extracted disc folder holding sys/ and
@@ -27,9 +32,10 @@
 #                     from inside one)
 #   --jobs N          parallel compiles (default: a quarter of the memory in GB; under emulation each
 #                     compile needs a lot of it)
-#   --frame-disc DIR  where the extracted disc goes on the Frame: absolute, or relative to the
-#                     Frame's home (default wiicompiled/disc; with --frame local, the disc folder
-#                     the build used)
+#   --frame-disc DIR  where the extracted disc goes on the Frame: relative to the Frame's home, or
+#                     an absolute path somewhere writable (the home folder or a mounted card; the
+#                     rest of SteamOS is read-only). Default wiicompiled/disc; with --frame local,
+#                     the disc folder the build used.
 #   -h, --help
 set -euo pipefail
 
@@ -90,6 +96,13 @@ case "$host_arch" in
     *) fail "this machine is $host_arch; the build needs an x86_64 or ARM64 Linux machine" ;;
 esac
 [[ "$(uname -s)" == Linux ]] || fail "run this on Linux (the build uses a Linux container)"
+# SteamOS (the Frame, or a Steam Deck used as the build machine): its system is read-only and
+# replaced by updates, so a missing tool cannot be installed into it, and the advice differs.
+os_id=$( (. /etc/os-release 2>/dev/null && printf '%s' "${ID:-}") || true)
+if [[ "$frame" == local && "$host_arch" != aarch64 ]]; then
+    fail "--frame local installs on the machine the script runs on, which is $host_arch, not the Frame.
+    Run it on the Frame, or give --frame the Frame's SSH address (steamos@<frame-ip>)."
+fi
 
 # ---------------------------------------------------------------------------------------------
 say "Checking the container runtime"
@@ -97,11 +110,17 @@ runtime=""
 for candidate in podman docker; do
     if command -v "$candidate" >/dev/null 2>&1; then runtime=$candidate; break; fi
 done
+if [[ -z "$runtime" && "$os_id" == steamos ]]; then
+    fail "this SteamOS has neither podman nor docker. Its system is read-only and every update
+    replaces it, so don't install them with pacman. Build on a Linux PC instead and install from
+    there: run this script on the PC with --frame steamos@<frame-ip>."
+fi
 [[ -n "$runtime" ]] || fail "neither podman nor docker is installed.
     Arch, CachyOS:  sudo pacman -S --needed podman qemu-user-static qemu-user-static-binfmt
     Debian, Ubuntu: sudo apt install podman qemu-user-static binfmt-support
     Fedora:         sudo dnf install podman qemu-user-static
-    SteamOS (the Frame) already has podman."
+    Bazzite, Silverblue and other image-based systems have podman already; add qemu-user-static
+    the way the system layers packages (rpm-ostree install qemu-user-static)."
 note "using $runtime"
 for tool in curl tar; do
     command -v "$tool" >/dev/null 2>&1 || fail "'$tool' is not installed"
@@ -119,6 +138,9 @@ if [[ "$host_arch" == x86_64 ]]; then
     program loses its first argument (uname -m printed 'Linux'). Register it again with flags POCF;
     the README's 'Other ways to build' shows how." ;;
         *)
+            [[ "$os_id" != steamos ]] || fail "ARM64 programs do not run in containers here ($seen),
+    and SteamOS's read-only system cannot add qemu. Build on the Frame itself (--frame local) or
+    on another Linux PC."
             fail "ARM64 programs do not run in containers here ($seen).
     Arch, CachyOS:  sudo pacman -S --needed qemu-user-static qemu-user-static-binfmt
                     sudo systemctl restart systemd-binfmt
@@ -452,11 +474,12 @@ EOF
 )
 if [[ "$has_disc" != yes ]]; then
     [[ -n "$disc_dir" ]] || fail "the Frame has no disc at $frame_disc yet: pass --disc"
-    note "copying the extracted disc to $frame_disc (a few GB)"
-    on_frame "$frame_disc_path" <<'EOF'
+    on_frame "$frame_disc_path" <<'EOF' || fail "cannot write $frame_disc on the Frame. SteamOS's system is read-only:
+    pick a folder in the home folder (the default, wiicompiled/disc) or on a mounted card."
 [[ "$1" = /* ]] && d=$1 || d="$HOME/$1"
-mkdir -p "$(dirname "$d")" && rm -rf "$d.partial"
+mkdir -p "$(dirname "$d")" 2>/dev/null && [[ -w "$(dirname "$d")" ]] && rm -rf "$d.partial"
 EOF
+    note "copying the extracted disc to $frame_disc (a few GB)"
     copy_to_frame "$disc_dir" "$frame_disc_path.partial"
     on_frame "$frame_disc_path" <<'EOF'
 [[ "$1" = /* ]] && d=$1 || d="$HOME/$1"
@@ -467,7 +490,7 @@ fi
 note "pointing the game at the disc"
 on_frame "$frame_disc_path" <<'EOF'
 [[ "$1" = /* ]] && d=$1 || d="$HOME/$1"
-config="$HOME/.local/share/WiiCompiled/Config.toml"
+config="${XDG_DATA_HOME:-$HOME/.local/share}/WiiCompiled/Config.toml"
 mkdir -p "$(dirname "$config")"
 if [[ ! -f "$config" ]]; then
     printf '[paths]\ndvd_root = "%s"\n' "$d" > "$config"
