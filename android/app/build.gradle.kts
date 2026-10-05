@@ -28,6 +28,7 @@ val prepareRuntimeResources by tasks.registering(Copy::class) {
     from(File(assets, "wii")) { into("runtime_resources/wii_bootstrap") }
     from(File(assets, "dsp/dsp_coef.bin")) { into("runtime_resources") }
     from(File(assets, "pipeline/initial_pipeline_cache.db")) { into("runtime_resources") }
+    from(File(assets, "certs/cacert.pem")) { into("runtime_resources") }
     into(runtimeResources)
 }
 

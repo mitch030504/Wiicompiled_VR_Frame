@@ -110,7 +110,7 @@ target_compile_definitions(mkw_runtime_common PRIVATE
     _DISABLE_STRING_ANNOTATION _DISABLE_VECTOR_ANNOTATION)
 target_link_libraries(mkw_runtime_common PRIVATE
     aurora::gx aurora::pad aurora::si aurora::vi aurora::mtx)
-target_link_libraries(mkw_runtime_common PRIVATE mkw_platform mkw::pugixml mkw::toml11 mkw::cryptopp)
+target_link_libraries(mkw_runtime_common PRIVATE mkw_platform mkw::pugixml mkw::toml11 mkw::cryptopp mkw::mbedtls)
 if(MKW_ENABLE_OPENXR)
     target_link_libraries(mkw_runtime_common PRIVATE ${MKW_OPENXR_TARGET})
 endif()
@@ -276,10 +276,10 @@ function(mkw_configure_product target)
     mkw_bound_translated_compiles(${target})
     if(MKW_PRODUCT_WITHOUT_GAME)
         target_link_libraries(${target} PRIVATE
-            mkw_platform mkw::pugixml mkw::toml11 mkw::cryptopp)
+            mkw_platform mkw::pugixml mkw::toml11 mkw::cryptopp mkw::mbedtls)
     else()
         target_link_libraries(${target} PRIVATE
-            mkw_platform mkw_base_shared mkw::pugixml mkw::toml11 mkw::cryptopp)
+            mkw_platform mkw_base_shared mkw::pugixml mkw::toml11 mkw::cryptopp mkw::mbedtls)
     endif()
 
     target_link_libraries(${target} PRIVATE
@@ -379,6 +379,21 @@ function(mkw_configure_product target)
     add_custom_command(TARGET ${target} POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${MKW_INITIAL_PIPELINE_CACHE}"
         "$<TARGET_FILE_DIR:${target}>/initial_pipeline_cache.db")
+
+    # Non-Windows TLS (runtime/src/hle/net/network_ssl.cpp's mbed TLS path) needs a trusted root
+    # CA bundle to verify server certificates against - Windows gets this for free from the OS via
+    # Schannel, mbed TLS does not ship one itself. Not SHA256-pinned like the DSP ROM above: unlike
+    # a fixed hardware ROM, this bundle is expected to be refreshed periodically as CAs rotate.
+    # Windows gets its trust store from Schannel, so only the platforms that actually build the
+    # mbed TLS path need the bundle beside the executable.
+    if(NOT MKW_PLATFORM_WINDOWS)
+        set(MKW_CA_CERTIFICATE_BUNDLE "${MKW_RUNTIME_SOURCE_DIR}/assets/certs/cacert.pem")
+        if(NOT EXISTS "${MKW_CA_CERTIFICATE_BUNDLE}")
+            message(FATAL_ERROR "Missing TLS root CA bundle: ${MKW_CA_CERTIFICATE_BUNDLE}")
+        endif()
+        add_custom_command(TARGET ${target} POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${MKW_CA_CERTIFICATE_BUNDLE}" "$<TARGET_FILE_DIR:${target}>/cacert.pem")
+    endif()
 endfunction()
 
 # Android ships each product as the shared library SDLActivity loads; the base
