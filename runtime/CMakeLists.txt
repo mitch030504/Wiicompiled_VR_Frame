@@ -506,6 +506,12 @@ target_include_directories(mkw_vr_eye_gaze_tests PRIVATE "${CMAKE_CURRENT_LIST_D
 target_compile_features(mkw_vr_eye_gaze_tests PRIVATE cxx_std_17)
 add_test(NAME mkw_vr_eye_gaze_tests COMMAND mkw_vr_eye_gaze_tests)
 
+# The AX mix kernels' AVX2 and NEON forms against their scalar reference loops.
+add_executable(mkw_ax_mix_kernels_tests "${CMAKE_CURRENT_LIST_DIR}/tests/ax_mix_kernels_tests.cpp")
+target_include_directories(mkw_ax_mix_kernels_tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
+target_compile_features(mkw_ax_mix_kernels_tests PRIVATE cxx_std_17)
+add_test(NAME mkw_ax_mix_kernels_tests COMMAND mkw_ax_mix_kernels_tests)
+
 # The in-headset settings panel's controller chord, release latch, selection,
 # scrolling and canvas mapping, plus the thread bridge they publish through.
 add_executable(mkw_vr_settings_panel_tests tests/vr_settings_panel_tests.cpp src/vr/openxr_settings_panel.cpp)
