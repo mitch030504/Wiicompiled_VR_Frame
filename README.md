@@ -336,7 +336,7 @@ point `--disc` at an extracted disc already on the Frame, such as `~/wiicompiled
 earlier install, which then stays where it is. Leave out `--work-dir` to keep it in
 `~/wiicompiled-frame`. With 15 GB of memory the Frame runs three
 compiles at once; it has less cooling than a PC, so keep it on its charger. The game then reads the
-disc straight from the work folder's `disc`. By hand, the
+disc where it was extracted: the folder `--disc` named, or the work folder's `disc` for an image. By hand, the
 steps under [Building by hand](#building-by-hand) work the same in a container started without
 `--platform linux/arm64`, with `nodtool-linux-aarch64` in place of `nodtool-linux-x86_64`.
 
