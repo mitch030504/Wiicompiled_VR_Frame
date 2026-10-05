@@ -1,11 +1,18 @@
 name: Steam Frame release
-# A tag named frame-<something> publishes a GitHub pre-release with the notes in
-# docs/releases/<tag>.md. Source only: the game is built from the player's own disc and nothing
-# built from it is distributed (README, Requirements). The v* tags stay with package.yml, which
-# packages upstream's Windows installer.
+# Publishes a GitHub pre-release with the notes in docs/releases/<tag>.md, either for a pushed
+# frame-<something> tag or, run by hand (Actions > Steam Frame release > Run workflow), for a tag
+# GitHub creates on the commit the run is for. Source only: the game is built from the player's own
+# disc and nothing built from it is distributed (README, Requirements). The v* tags stay with
+# package.yml, which packages upstream's Windows installer.
 on:
   push:
     tags: ['frame-*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, frame-<something>; docs/releases/<tag>.md holds its notes
+        required: true
+        default: frame-beta-1
 permissions:
   contents: write
 jobs:
@@ -18,13 +25,24 @@ jobs:
       - name: Publish the pre-release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           REPOSITORY: ${{ github.repository }}
+          DISPATCHED: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
+          case "$TAG" in
+            frame-*) ;;
+            *) echo "::error::Steam Frame release tags start with frame-, not '$TAG'"; exit 1 ;;
+          esac
           notes="docs/releases/${TAG}.md"
           if [ ! -f "$notes" ]; then
             echo "::error::No release notes at $notes"
             exit 1
           fi
-          gh release create "$TAG" --repo "$REPOSITORY" --verify-tag --prerelease \
+          if [ "$DISPATCHED" = "true" ]; then
+            # GitHub creates the tag on this run's commit.
+            where=(--target "$GITHUB_SHA")
+          else
+            where=(--verify-tag)
+          fi
+          gh release create "$TAG" --repo "$REPOSITORY" "${where[@]}" --prerelease \
             --title "WiiCompiled VR for the Steam Frame ${TAG#frame-}" --notes-file "$notes"
