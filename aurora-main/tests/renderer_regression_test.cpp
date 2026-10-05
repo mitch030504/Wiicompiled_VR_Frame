@@ -1,5 +1,8 @@
 #include "gx_test_common.hpp"
+#include "gfx/staging_map.hpp"
 #include "gx/pipeline.hpp"
+
+#include <thread>
 
 using aurora::gx::g_gxState;
 
@@ -83,4 +86,34 @@ TEST_F(GXFifoTest, SingleExpandedPrimitiveCannotMergeWithTriangles) {
   decode_fifo(draw(GX_TRIANGLES, 3));
   EXPECT_EQ(aurora::gfx::g_mergedDrawCallCount, 0u);
   EXPECT_EQ(aurora::gfx::testing::last_pushed_indices(), (std::vector<u16>{0, 1, 2}));
+}
+
+TEST(StagingMapping, RetiredCallbacksCannotPublishAnotherBuffersReadiness) {
+  using namespace aurora::gfx;
+  StagingMapState state;
+  const auto old = state.request();
+  EXPECT_EQ(state.request(), 0u);
+  state.reset();
+  const auto current = state.request();
+  EXPECT_FALSE(state.complete(old, BufferMapState::Mapped));
+  EXPECT_FALSE(state.complete(old, BufferMapState::Unmapped));
+  EXPECT_EQ(state.state(), BufferMapState::Mapping);
+  EXPECT_TRUE(state.complete(current, BufferMapState::Mapped));
+  EXPECT_FALSE(state.complete(current, BufferMapState::Unmapped));
+  EXPECT_EQ(state.state(), BufferMapState::Mapped);
+}
+
+TEST(StagingMapping, AsyncCompletionWakesWaiters) {
+  using namespace aurora::gfx;
+  StagingMapState state;
+  const auto generation = state.request();
+  std::thread callback([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    state.complete(generation, BufferMapState::Mapped);
+  });
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  while (state.state() == BufferMapState::Mapping && std::chrono::steady_clock::now() < deadline)
+    state.wait_for_progress();
+  callback.join();
+  EXPECT_EQ(state.state(), BufferMapState::Mapped);
 }
