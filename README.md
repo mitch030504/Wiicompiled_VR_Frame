@@ -4,7 +4,7 @@
 
 <p align="center">
   <img alt="Steam Frame, SteamOS ARM64" src="https://img.shields.io/badge/Steam%20Frame-SteamOS%20%C2%B7%20ARM64-1A9FFF?logo=steam&amp;logoColor=white">
-  <img alt="Status: untested on the headset" src="https://img.shields.io/badge/status-untested%20on%20the%20headset-FF9F0A">
+  <a href="https://github.com/mitch030504/Wiicompiled_VR_Frame/releases"><img alt="Status: beta" src="https://img.shields.io/badge/status-beta-FF9F0A"></a>
   <a href="https://github.com/iChris4/Wiicompiled_VR"><img alt="Fork of WiiCompiled OpenXR VR" src="https://img.shields.io/badge/fork%20of-WiiCompiled%20OpenXR%20VR-8B5CF6"></a>
   <a href="LICENSE"><img alt="License: GPLv3" src="https://img.shields.io/badge/license-GPLv3-2EA44F?logo=gnu&amp;logoColor=white"></a>
 </p>
@@ -21,9 +21,11 @@ C++ and compiled for the Frame's ARM64 CPU, and it renders through SteamVR's Ope
 > against your disc image, and nothing is uploaded.
 
 > [!WARNING]
-> **Not yet run on a Steam Frame.** The Frame build compiles and its unit tests pass, but nobody
-> has played it on the headset yet. Expect it to fail in ways only the device shows; reports with
-> the run log are what moves it forward (see [Reporting problems](#reporting-problems)).
+> **Beta.** It runs on a Steam Frame: SteamVR, both eyes at the panels' 2160x2160, the Frame's
+> controllers, 120 Hz with every game frame shown, and foveation that follows your eyes. It is not
+> finished: images still double in races and on the HUD, and the foveation tracks the right eye
+> less well than the left (see [Known issues](#known-issues)). Reports with the run log move it
+> forward (see [Reporting problems](#reporting-problems)).
 
 ---
 
@@ -42,11 +44,17 @@ readings it is based on.
   button pauses and the left shoulder opens the settings panel.
 - **120 Hz.** The headset is asked for 120 Hz, exactly two display refreshes per game frame at the
   game's 60 FPS, so motion is even. `[vr] refresh_rate` changes it.
+- **Every refresh from the game.** SteamVR halved the app's rate and filled every other refresh
+  itself. The game now submits its last frame again, at the pose it was rendered for, on each
+  refresh it has no new frame for (`[vr] repeat_frames`), so SteamVR runs it at the full 120 Hz.
 - **Eye-tracked foveation.** Variable-resolution rendering whose sharp centre follows your gaze
   through the Frame's eye tracking, instead of staying fixed straight ahead. `[vr] foveation` sets
   the strength and `[vr] eye_tracked_foveation` turns the tracking off.
-- **Standalone defaults**: 0.8 render scale, the game's own object culling and medium foveation,
-  as on the Quest, sized for a mobile GPU driving 2160x2160 per eye.
+- **Standalone defaults**: the game's own object culling and medium foveation, as on the Quest.
+  The render scale defaults to 0.8; on the Frame 1.0 is SteamVR's recommended 1728x1728 and **1.25
+  is the panels' native 2160x2160**, which the Frame renders with time to spare.
+- **Crash diagnostics on Linux.** A native crash logs the faulting thread, its pc and a backtrace,
+  which is how a crash on race restart was traced to the density maps sharing memory Dawn unmaps.
 - **Build tooling.** `Launcher/build-dawn-linux.sh` builds the patched Dawn (Aurora's WebGPU
   layer) the VR backend needs, and `Launcher/local-build.sh` gained `--openxr`, `--dawn-package`,
   `--headset steam_frame` and `--cpu`.
@@ -57,41 +65,85 @@ the memory-sharing extensions the Android backend needs. The native build is the
 
 ## Requirements
 
-- A Steam Frame with SteamVR, reachable over SSH (`ssh steamos@<frame-ip>`).
+- A Steam Frame with Developer Mode on and SSH set up (Steam Settings → System → Enable Developer
+  Mode, then set a user password). [Frame Control](https://github.com/saphid/frame-control) makes the
+  rest easier: it sets up an SSH key and installs the game into your Steam library.
 - A clean, unmodified **PAL `RMCP01`** disc image of Mario Kart Wii, dumped by you. ISO, GCM,
   GCZ, CISO, WBFS, WIA and RVZ can all be extracted. Other regions and patched executables are
   rejected.
-- Somewhere to build. Either:
-  - **an x86_64 Linux PC** with podman and qemu: it builds in an emulated ARM64 container, which is
-    slow (the first build takes hours) but spares the Frame; or
+- Somewhere to build, all of them running an ARM64 Debian container:
+  - **an x86_64 Linux PC** with podman and qemu (emulated, so slow: the first build takes hours);
+  - **a stronger Linux machine or server** with Docker, the same way and faster;
   - **the Frame itself**, in a podman container there.
-- Several GB of free disk space for the toolchain, Dawn and the game.
+- About 20 GB of free disk space on the build machine for the toolchain, Dawn and the game.
 
 > [!NOTE]
 > Nobody here will tell you where to get the game. Dumping your own disc is on you, and links to
-> game files won't be provided or tolerated.
+> game files won't be provided or tolerated. For the same reason there is no ready-built game to
+> download: releases hold the source, and the game is always built from your own disc.
 
 ## Building and installing
 
-The commands are in [`docs/steam-frame.md`](docs/steam-frame.md): [Building it on a Linux
-PC](docs/steam-frame.md#building-it-on-a-linux-pc) or [Building it on the
+The commands are in [`docs/steam-frame.md`](docs/steam-frame.md): [on a Linux
+PC](docs/steam-frame.md#building-it-on-a-linux-pc), [with Docker on another
+machine](docs/steam-frame.md#building-it-with-docker-on-another-machine) or [on the
 Frame](docs/steam-frame.md#building-it-on-the-frame). In short:
 
 1. Extract your disc with [nodtool](https://github.com/encounter/nod) and copy `sys/main.dol` and
-   `files/rel/StaticR.rel` into `Assets/`.
+   `files/rel/StaticR.rel` into `Assets/`. Keep the extracted disc: the game reads it at run time.
 2. Start a Debian trixie ARM64 container and install the build packages, the bundled clang 22,
    CMake and Ninja (`Launcher/prepare-portable-tools.sh --arch aarch64`), and .NET 8.
-3. Build the patched Dawn: `Launcher/build-dawn-linux.sh`.
-4. Build the game: `Launcher/local-build.sh ... --openxr --dawn-package <dawn>/package --headset steam_frame`.
-5. Copy the output and the extracted disc to the Frame, set `[paths] dvd_root` in
-   `~/.local/share/WiiCompiled/Config.toml`, start SteamVR, then start `WiiCompiled`.
+3. Build the patched Dawn once: `Launcher/build-dawn-linux.sh`. Under emulation give it `--jobs 4`
+   on a 16 GB machine; more parallel jobs can run it out of memory.
+4. Build the game: `Launcher/local-build.sh ... --openxr --dawn-package <dawn>/package --headset
+   steam_frame`, with `--parallel` sized to the machine's memory (8 for 32 GB).
+5. Copy the extracted disc to the Frame, and either send the `out` folder to the Frame with
+   [Frame Control](docs/steam-frame.md#installing-it-with-frame-control), which adds it to your
+   Steam library, or copy it over with `scp`.
+6. Write `~/.local/share/WiiCompiled/Config.toml` on the Frame with your disc's path, then start
+   the game from the library in the headset:
+
+   ```toml
+   [paths]
+   dvd_root = "/home/steamos/wiicompiled/disc"
+   ```
+
+### Recommended settings
+
+All of them are in the headset's settings panel (left shoulder button, **VR** tab) as well as in
+`Config.toml`:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| `[vr] render_scale` | `1.25` | The panels' native 2160x2160 per eye. |
+| `[vr] foveation` | `medium` | `off` costs the most GPU time. |
+| `[vr] repeat_frames` | `true` (default) | Keeps SteamVR at 120 Hz. |
+| `[vr] frame_interpolation_fps` | `0` | Interpolation made things worse on the Frame. |
+| `[video] resolution_multiplier` | `2` | The game's own frame; 4x is too heavy for the Frame's GPU. |
+
+Keep SteamVR's own refresh rate at 120 Hz. Motion Smoothing makes no difference here.
+
+## Known issues
+
+- **Doubled images** in races and on the HUD, worst while racing, sometimes in the right eye only.
+  The suspect is foveation on the Frame's graphics driver. If it bothers you, try foveation **Off**
+  in the panel (it costs GPU time), and report whether it helped.
+- **Foveation follows the right eye less well** than the left, and its sharp area may feel small
+  on Low and Medium.
+- **VR frame interpolation** is not recommended on the Frame.
+- **The Quest app's `steamFrame` flavour** (an Android build for the Frame's Lepton layer) cannot
+  show a picture: Lepton's graphics driver lacks the memory sharing it needs. Use the native build.
 
 ## Reporting problems
 
-Open an issue on this repository with the run log from `~/.local/share/WiiCompiled/Logs/` on the
-Frame, or the last lines of the failing build step. [Running
-it](docs/steam-frame.md#running-it) lists the log lines a working start shows, in order; the
-first one missing says where it stopped.
+Open an issue on this repository with:
+- what you did and what you saw (which eye, where in the picture, racing or menus);
+- the run log: each run has a folder under `~/.local/share/WiiCompiled/Logs/` on the Frame, with
+  `console.log` and, after a crash, `crash_sigsegv.txt`;
+- or, for a build problem, the last lines of the failing step.
+
+[Running it](docs/steam-frame.md#running-it) lists the log lines a working start shows, in order;
+the first one missing says where it stopped.
 
 Problems that also happen on a PC or a Quest belong upstream, in
 [WiiCompiled OpenXR VR](https://github.com/iChris4/Wiicompiled_VR).
@@ -170,6 +222,8 @@ All translated output is verified against real hardware behavior and most import
 - **[nod](https://github.com/encounter/nod)** - nodtool, the disc image extractor.
 - **[DolphinXR](https://github.com/iChris4/dolphinXR)** - the Steam Frame controller profile's
   input paths.
+- **[Frame Control](https://github.com/saphid/frame-control)** by saphid - installing the game into
+  the Frame's Steam library, and its notes on how the Frame's software fits together.
 - Everyone in the static recompilation community.
 
 Bundled third-party components and their licenses live in

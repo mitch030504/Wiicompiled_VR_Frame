@@ -1,0 +1,30 @@
+name: Steam Frame release
+# A tag named frame-<something> publishes a GitHub pre-release with the notes in
+# docs/releases/<tag>.md. Source only: the game is built from the player's own disc and nothing
+# built from it is distributed (README, Requirements). The v* tags stay with package.yml, which
+# packages upstream's Windows installer.
+on:
+  push:
+    tags: ['frame-*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Publish the pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          notes="docs/releases/${TAG}.md"
+          if [ ! -f "$notes" ]; then
+            echo "::error::No release notes at $notes"
+            exit 1
+          fi
+          gh release create "$TAG" --repo "$REPOSITORY" --verify-tag --prerelease \
+            --title "WiiCompiled VR for the Steam Frame ${TAG#frame-}" --notes-file "$notes"

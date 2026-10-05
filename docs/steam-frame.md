@@ -15,8 +15,14 @@ Most of what this document describes is shared by both: the Frame controller pro
 request, eye-tracked foveation and the Frame's defaults. The native build gets them through
 `MKW_HEADSET=steam_frame` (`MKW_HEADSET_STEAM_FRAME`), as the Android flavour does.
 
-**Status: not yet run on a Steam Frame.** The native build's VR code compiles and the unit tests
-pass; building it on the Frame and the device checks are still to do.
+**Status: beta, played on a Steam Frame.** The native build starts in VR under SteamVR, renders
+both eyes on the device Dawn shares with the runtime, binds the Frame's controllers, runs at 120 Hz
+with every game frame shown (`new=60 repeat=60` a second, no late frames, at `render_scale = 1.25`,
+the panels' 2160x2160), and follows the eyes with its foveation. Two device runs found and fixed a
+crash on race restart (see [Eye-tracked foveation](#eye-tracked-foveation)) and SteamVR halving the
+app's rate (see [Refresh rate](#refresh-rate)). Still open, in [Known issues](#known-issues): doubled
+images in races and on the HUD, sometimes in one eye only, and foveation that follows the right eye
+less well than the left.
 
 ## The native SteamOS build
 
@@ -122,6 +128,56 @@ scp -r ~/wiicompiled/out steamos@<frame-ip>:wiicompiled/
 scp -r ~/wiicompiled/disc-extract steamos@<frame-ip>:wiicompiled/disc
 ```
 
+### Building it with Docker on another machine
+
+A faster x86_64 machine helps most with the game itself (the translated code is a few thousand large
+files). Docker works as podman does, with one difference on hosts whose `binfmt_misc` registrations
+are per container (Unraid 7 with kernel 6.18): `tonistiigi/binfmt --install arm64` then succeeds but
+only inside its own container, and Debian answers `exec format error`. Register the emulator on the
+host instead, with the `P` flag the tonistiigi build of qemu expects (without it every program loses
+its first argument: `uname -m` prints `Linux`):
+
+```bash
+docker create --name qemu-src tonistiigi/binfmt
+docker cp qemu-src:/usr/bin/qemu-aarch64 /usr/local/bin/qemu-aarch64
+docker rm qemu-src
+echo ':qemu-aarch64:M::\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xb7\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/local/bin/qemu-aarch64:POCF' > /proc/sys/fs/binfmt_misc/register
+docker run --rm --platform linux/arm64 debian:trixie uname -m   # aarch64
+```
+
+Unraid keeps `/usr/local/bin` in memory, so this is repeated after a reboot. Copy the work directory
+over, without Dawn's build tree (the package is what the game links), and run the build detached so
+that a closed SSH session does not stop it:
+
+```bash
+rsync -a --exclude dawn/build --exclude 'dawn/dawn-*' --exclude disc-extract \
+    ~/wiicompiled/ root@<server>:/mnt/user/appdata/wiicompiled/        # from the PC
+docker run -d --name wiicompiled-frame --platform linux/arm64 \
+    -v /mnt/user/appdata/wiicompiled:/work debian:trixie \
+    bash -c 'bash /work/build-game.sh >> /work/game.log 2>&1'
+```
+
+`build-game.sh` holds the `apt-get` line of [Building it on the Frame](#building-it-on-the-frame)
+and the `local-build.sh` command, with `--parallel 8` for 32 GB of memory (compiles take more memory
+under emulation: Dawn's build at 16 jobs froze a 16 GB laptop, and finished at 4). `docker start
+wiicompiled-frame` runs it again after a change: the translation is reused and only what changed
+is compiled.
+
+### Installing it with Frame Control
+
+[Frame Control](https://github.com/saphid/frame-control) adds a folder to the Frame's Steam library as
+a Devkit Game: drop the `out` folder on **Send to Frame** and keep **Launches** on `WiiCompiled`.
+It picks `SteamLinuxRuntime_4-arm64` for an ARM64 program, but Steam starts such a title natively,
+which this build needs (it uses the system's `libpng16`, `libstdc++` and `libz`). The game then lands
+in `~/devkit-game/<name>/` and starts from the library inside the headset, where SteamVR is already
+running. An update only replaces the executable; copy it under another name and move it into place,
+which also works while an old copy is open:
+
+```bash
+scp WiiCompiled frame:devkit-game/WiiCompiled/WiiCompiled.new
+ssh frame 'cd ~/devkit-game/WiiCompiled && chmod 755 WiiCompiled.new && mv -f WiiCompiled.new WiiCompiled'
+```
+
 ### Running it
 
 The game reads its `Config.toml` from `~/.local/share/WiiCompiled/` on SteamOS (it is created on the first start): set
@@ -141,6 +197,35 @@ in order:
 
 `Linux Vulkan OpenXR requires a Dawn built with Aurora's patches` means the build used a stock Dawn:
 check that `--dawn-package` pointed at `build-dawn-linux.sh`'s `package` directory.
+
+The game only writes a `Config.toml` when there is none, so a file holding just `[paths]` and
+`dvd_root` can be written before the first start. Each run gets its own folder under `Logs/`; a
+native crash leaves `crash_sigsegv.txt` there and, in `console.log`, the faulting thread, its pc and
+lr and a backtrace as module + offset, which `addr2line -f -C -e native-build/WiiCompiled <offset>`
+turns into functions on the build machine (the executable is not stripped).
+
+### Settings that matter on the Frame
+
+| Setting | Recommended | Why |
+| --- | --- | --- |
+| `[vr] render_scale` | `1.25` | Scales SteamVR's recommended eye size, 1728x1728 on the Frame; 1.25 is the panels' 2160x2160. The eye passes took 9 to 11 ms a game frame there, with medium foveation. |
+| `[vr] foveation` | `medium` | `off` shades every pixel and costs the most. See [Known issues](#known-issues) if images double. |
+| `[vr] repeat_frames` | `true` (default) | Without it SteamVR halves the app's rate and fills refreshes itself. |
+| `[vr] frame_interpolation_fps` | `0` | Rendering in-between frames needs 120 eye pairs a second; at these resolutions it made things worse. |
+| `[video] resolution_multiplier` | `2` | The game's own frame, which the eyes are made from, at 2x the Wii's. 4x is far too heavy for the Adreno 750. |
+
+## Known issues
+
+- **Doubled images.** Images double in races and on the HUD, worst while racing, at first in the
+  right eye only and later in both. Both eyes get the same frames and repeats, so a one-eyed doubling
+  is not the 60 FPS cadence. The suspect is foveation: Turnip draws a coarse bin at lower resolution
+  and scales it back up, and each eye's density maps change with its gaze. Comparing foveation off,
+  on without eye tracking, and on with it is the next test.
+- **Foveation and the right eye.** The full-density region follows the left eye better than the
+  right. Each eye already gets its own gaze direction; convergence on near content (the HUD screen at
+  2 m, the cockpit) is not yet corrected for.
+- **VR frame interpolation** is not recommended on the Frame (see the table above).
+- **The Android flavour** cannot show a picture in Lepton (below).
 
 ## The Android flavour in Lepton
 
