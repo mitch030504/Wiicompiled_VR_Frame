@@ -153,6 +153,12 @@ The Frame's controllers are bound through their own profile, so the left D-pad w
 
 ## Troubleshooting
 
+**Everything at once.** From the PC, `Launcher/frame-diagnostics.sh --frame steamos@<frame-ip>` (or
+`--frame frame` with Frame Control) gathers the newest runs' logs and crash files, `Config.toml`,
+SteamVR's logs, the GPU and Vulkan driver, and the system's state into one `.tar.gz`. Its
+`summary.txt`, also printed at the end, gives the startup steps below that the newest run reached.
+`--help` lists the options.
+
 **Logs.** Each run gets a folder under `~/.local/share/WiiCompiled/Logs/` on the Frame, holding
 `console.log` and, after a crash, `crash_sigsegv.txt`. A working start logs, in order:
 
