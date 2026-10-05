@@ -2,7 +2,7 @@
 
 Standalone Android/OpenXR build of the Mario Kart Wii recompilation for Quest 1,
 Quest 2, Quest 3, Quest 3S and Quest Pro, and, as the `steamFrame` flavour, for Valve's Steam
-Frame under Lepton (the [README](../README.md#the-android-flavour); the Frame is played with the native SteamOS build). The full design, build
+Frame under Lepton (the [README](../README.md#how-it-works); the Frame is played with the native SteamOS build). The full design, build
 walkthrough and current status live in [docs/quest-port.md](../docs/quest-port.md); this directory only
 holds the Gradle project, its helper scripts, the game kit tooling
 (`QuestGameKit.psm1`, `Build-QuestGame.ps1`), the on-headset build toolchain
