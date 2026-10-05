@@ -157,8 +157,8 @@ constexpr std::array<const char*, 4> kVrFoveationLabels{"Off", "Low", "Medium", 
 static_assert(kVrFoveationLabels.size() == RuntimeConfigFile::kVrFoveationLevels.size());
 int g_vrFoveation = static_cast<int>(RuntimeConfigFile::VrFoveationLevelIndex(RuntimeConfigFile::VrFoveation()));
 bool g_vrEyeTrackedFoveation = RuntimeConfigFile::VrEyeTrackedFoveation();
-bool g_vrRepeatFrames = RuntimeConfigFile::VrRepeatFrames();
 #endif
+bool g_vrRepeatFrames = RuntimeConfigFile::VrRepeatFrames();
 bool g_vrFirstPerson = RuntimeConfigFile::VrFirstPerson(false);
 bool g_vrFirstPersonToggleClick = RuntimeConfigFile::VrFirstPersonToggleClick();
 // Set from any thread by the right-thumbstick click, applied on the game thread.
