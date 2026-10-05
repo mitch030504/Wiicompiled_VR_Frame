@@ -422,7 +422,7 @@ static wgpu::BindGroupLayout g_depthBindGroupLayout;
 static wgpu::Sampler g_nearestSampler;
 static wgpu::Sampler g_linearSampler;
 static absl::flat_hash_map<GXTexFmt, wgpu::RenderPipeline> g_pipelines;
-static wgpu::RenderPipeline g_blitPipeline;
+static absl::flat_hash_map<wgpu::TextureFormat, wgpu::RenderPipeline> g_blitPipelines;
 static wgpu::RenderPipeline g_quest1BlitPipeline;
 
 static bool quest1_simple_blit() noexcept {
@@ -549,9 +549,15 @@ void initialize() {
   };
   g_depthBindGroupLayout = g_device.CreateBindGroupLayout(&depthBindGroupLayoutDescriptor);
 
-  g_blitPipeline = create_pipeline(
-      {GX_TF_RGBA8, FragPassthrough, webgpu::g_graphicsConfig.surfaceConfiguration.format, "TexCopyConv Blit"},
-      ShaderPreamble, g_bindGroupLayout);
+  // Native RAM readback uses RGBA even when the EFB/surface uses BGRA.
+  // Build both variants here; frame workers only read the completed map.
+  for (const auto format : {wgpu::TextureFormat::RGBA8Unorm, wgpu::TextureFormat::BGRA8Unorm,
+                            webgpu::g_graphicsConfig.surfaceConfiguration.format}) {
+    if (format != wgpu::TextureFormat::Undefined && !g_blitPipelines.contains(format)) {
+      g_blitPipelines[format] = create_pipeline({GX_TF_RGBA8, FragPassthrough, format, "TexCopyConv Blit"},
+                                                ShaderPreamble, g_bindGroupLayout);
+    }
+  }
   g_quest1BlitPipeline = create_pipeline(
       {GX_TF_RGBA8, {}, webgpu::g_graphicsConfig.surfaceConfiguration.format, "Quest 1 Simple TexCopy Blit"},
       SimpleBlitShader, g_bindGroupLayout);
@@ -585,7 +591,7 @@ void initialize() {
 
 void shutdown() {
   g_pipelines.clear();
-  g_blitPipeline = {};
+  g_blitPipelines.clear();
   g_quest1BlitPipeline = {};
   g_bindGroupLayout = {};
   g_depthBindGroupLayout = {};
@@ -678,7 +684,15 @@ void run(const wgpu::CommandEncoder& cmd, const ConvRequest& req) {
 }
 
 void blit(const wgpu::CommandEncoder& cmd, const ConvRequest& req) {
-  execute(cmd, req, quest1_simple_blit() ? g_quest1BlitPipeline : g_blitPipeline);
+  if (quest1_simple_blit()) {
+    execute(cmd, req, g_quest1BlitPipeline);
+    return;
+  }
+  const auto it = g_blitPipelines.find(req.dst->format);
+  if (it == g_blitPipelines.end()) {
+    Log.fatal("Unsupported blit destination format {}", static_cast<int>(req.dst->format));
+  }
+  execute(cmd, req, it->second);
 }
 
 } // namespace aurora::gfx::tex_copy_conv

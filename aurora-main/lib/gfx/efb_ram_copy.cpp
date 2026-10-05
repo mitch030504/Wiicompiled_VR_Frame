@@ -109,8 +109,9 @@ void ensure_native_texture(PendingCopy& pending, TextureHandle* cache = nullptr)
       *cache = pending.nativeTexture;
     }
   }
+  // The shared blit shader clamps Y to flags.z/w; preserve the full source.
   const std::array nativeBlitUniform{
-      0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 64.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+      0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 64.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f,
   };
   pending.nativeBlitUniform = push_uniform(nativeBlitUniform);
 }
