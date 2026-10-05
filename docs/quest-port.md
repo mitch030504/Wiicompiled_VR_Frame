@@ -3,9 +3,10 @@
 This document is the design and build reference for the native Quest build. It
 complements `OPENXR.md`, which remains the specification for the presentation
 policy, the virtual screen, the first-person camera and frame interpolation:
-all of that is shared, unchanged, between the Windows D3D12 product and the
-Quest Vulkan product. What differs is everything below the stereo replay: the
-graphics binding, the app shell and the platform glue.
+all of that is shared, unchanged, between the PC products (Windows D3D12 and
+Vulkan), the Steam Frame's native SteamOS product and the Quest Vulkan product.
+What differs is everything below the stereo replay: the graphics binding, the
+app shell and the platform glue.
 
 ## Sources of the design
 
@@ -1160,28 +1161,24 @@ or `EndAccess` errors); a black mirror too points at Aurora itself.
 
 ## Known gaps and next steps
 
-- **Device bring-up.** Run on a Quest 3, capture logcat, fix what the runtime
-  rejects. Likely first candidates: the exact `XR_KHR_vulkan_enable2` device
-  extension negotiation, Dawn's begin/end layout reporting for AHardwareBuffer
-  imports, and swapchain format choice (`R8G8B8A8_SRGB` is expected).
-- **Performance.** The desktop product targets x86-64-v3; nothing has been
-  profiled on the XR2. The first run compiles every bundled pipeline recipe
-  (about half a minute); later runs load Dawn's pipeline cache from `Cache/`
-  next to `DATA`. `render_scale` defaults to 0.8 here (1.0 on
-  PC); lower it further if the compositor reports missed frames. It can be
-  changed during a race from the headset panel (VR → Render resolution).
-  Foveated rendering (above) is off by default: at `render_scale` 0.8 it saves
-  nothing measurable, above that 8 to 22% of the eyes' GPU time.
-- **Lifecycle.** Backgrounding (the Quest menu, guardian) pauses the session
-  through the ordinary `STOPPING`/`READY` events; SDL's Android surface loss is
-  handled by Aurora's existing Android paths. Neither has been exercised.
-- **Input.** D-pad (trick inputs) is not bound; remap in `Config.toml` or bind
-  the thumbstick directions in a follow-up. Haptics are wired but nothing calls
-  them yet.
-- **Retro Rewind on the headset** runs from a kit-built library (below), but its game must be built
-  on a PC and its pack copied next to `DATA` by hand. `adb push` cannot create directories inside
-  an app's external files directory (`secure_mkdirs failed`), so push the pack to `Download` and
-  copy it over on the device, then `chmod -R a+rX` it. The launcher does not fetch or update the
-  pack, and cannot build the mod on the headset.
-- **Release signing and store packaging** are out of scope; `Build-Quest.ps1`
-  produces debug-signed APKs for sideloading.
+- **Not yet verified on a headset:** stereo comfort and scale, the lifecycle (the Quest menu,
+  guardian and sleep pause the session through the ordinary `STOPPING`/`READY` events, and SDL's
+  surface loss goes through Aurora's existing Android paths, but neither has been exercised), and
+  a full race to the finish.
+- **Performance.** Heavy tracks are still GPU-bound on a Quest 3 (Retro Rewind's SNES Ghost Valley 2
+  at about 40 FPS at `render_scale` 1.0). `render_scale` defaults to 0.8 here (1.0 on PC); lower it
+  further if the compositor reports missed frames, live from the headset panel (VR → Render
+  resolution). Foveation defaults to `medium`: at 0.8 it saves nothing measurable, above that 8 to
+  22% of the eyes' GPU time ([Foveated rendering](#foveated-rendering)). The first run compiles
+  every bundled pipeline recipe (about half a minute); later runs load Dawn's pipeline cache from
+  `Cache/` next to `DATA`.
+- **Input.** Touch controllers have no D-pad, so the Wii Remote's D-pad is unbound on the Quest
+  (the Steam Frame's controller profile binds its left D-pad); remap in `Config.toml` if a mod needs
+  it.
+- **Retro Rewind on the headset.** The launcher downloads and updates the pack (**Download Retro
+  Rewind** on Home) and can build the mod on the headset with the pack in place. Copying a pack by
+  hand instead needs care: `adb push` cannot create directories inside an app's external files
+  directory (`secure_mkdirs failed`), so push it to `Download` and copy it over on the device, then
+  `chmod -R a+rX` it.
+- **Release signing and store packaging** are out of scope; `Build-Quest.ps1` produces debug-signed
+  APKs for sideloading.

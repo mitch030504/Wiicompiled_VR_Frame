@@ -96,7 +96,8 @@ curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/op
 ### 3. Play
 
 Start **WiiCompiled** from the library in the headset. Open the settings panel with the left
-shoulder button, go to the **VR** tab and set the [recommended settings](#recommended-settings).
+shoulder button (with the controllers as a gamepad: both sticks clicked together), go to the **VR**
+tab and set the [recommended settings](#recommended-settings).
 
 ### Updating
 
@@ -107,17 +108,19 @@ so), so an update usually takes minutes. `--release <tag>` builds a given releas
 
 ## Recommended settings
 
-All of these are in the headset's settings panel (left shoulder button, **VR** tab) and in
+All of these are in the headset's settings panel (**VR** tab) and in
 `~/.local/share/WiiCompiled/Config.toml`. Quit the game before editing the file; it writes its
 settings back when it closes.
 
-| Setting | Value | Why |
-| --- | --- | --- |
-| `[vr] render_scale` | `1.25` | Scales SteamVR's recommended eye size, 1728x1728 on the Frame: 1.25 is the panels' native 2160x2160, which the Frame renders in 9 to 11 ms a frame with medium foveation. |
-| `[vr] foveation` | `medium` | `off` shades every pixel and costs the most. See [Known issues](#known-issues) if images double. |
-| `[vr] repeat_frames` | `true` (default) | Without it SteamVR halves the game's rate and fills refreshes itself. |
-| `[vr] frame_interpolation_fps` | `0` | Rendering in-between frames needs 120 eye pairs a second, which made things worse on the Frame. |
-| `[video] resolution_multiplier` | `2` | The game's own frame, which the eyes are made from. 4x is far too heavy for the Frame's GPU. |
+| Setting | Value | Default | Why |
+| --- | --- | --- | --- |
+| `[vr] render_scale` | `1.25` | `0.8` | Scales SteamVR's recommended eye size, 1728x1728 on the Frame: 1.25 is the panels' native 2160x2160, which the Frame renders in 9 to 11 ms a frame with medium foveation. |
+| `[vr] foveation` | `medium` | `medium` | `off` shades every pixel and costs the most. See [Known issues](#known-issues) if images double. |
+| `[vr] eye_tracked_foveation` | `true` | `true` | Centres the sharp region on your gaze instead of the middle of each eye. |
+| `[vr] repeat_frames` | `true` | `true` | Without it SteamVR halves the game's rate and fills refreshes itself. |
+| `[vr] refresh_rate` | `120` | `120` | Two refreshes per game frame. SteamVR must be set to 120 Hz as well. |
+| `[vr] frame_interpolation_fps` | `0` | `0` | Rendering in-between frames needs 120 eye pairs a second, which made things worse on the Frame. |
+| `[video] resolution_multiplier` | `2` | `1` | The game's own frame, which the eyes are made from. 4x is far too heavy for the Frame's GPU. |
 
 Keep SteamVR's refresh rate at 120 Hz. Motion Smoothing makes no difference to this game.
 
@@ -137,6 +140,9 @@ The Frame's controllers are bound through their own profile, so the left D-pad w
 | Left stick, left trigger | Nunchuk stick, Z | Left stick, left trigger |
 | Grips, stick clicks, motion, aim | as on Quest Touch ([`OPENXR.md`](OPENXR.md), Controllers) | as on Touch |
 | Right X, Y, menu and shoulder | unbound | unbound |
+
+In gamepad mode (`[vr] controller_mode = "gamepad"`) the left shoulder is the GameCube Y button, so
+the settings panel opens with both sticks clicked together instead.
 
 ## Known issues
 
@@ -195,11 +201,11 @@ emulation as in [Quick start](#quick-start) step 1 first.
 ### 1. Download the release and extract your disc
 
 Take the newest release from the [Releases](https://github.com/mitch030504/Wiicompiled_VR_Frame/releases)
-page; the commands use `frame-beta-1`, so put the newest release's tag in its place:
+page; the commands use `frame-beta-2`, so put the newest release's tag in its place:
 
 ```bash
 mkdir -p ~/wiicompiled/Wiicompiled_VR_Frame; cd ~/wiicompiled
-curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-1.tar.gz \
+curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-2.tar.gz \
     | tar -xz --strip-components=1 -C Wiicompiled_VR_Frame
 curl -fL -o nodtool https://github.com/encounter/nod/releases/download/v2.0.0-alpha.10/nodtool-linux-x86_64
 chmod +x nodtool
@@ -270,12 +276,12 @@ the executable. `rsync -c` copies just the files whose content changed and stamp
 current time, so the build recompiles exactly those. Unpacking over the source would restore each
 file's commit date, which can be older than the last build, and changes would be skipped. Your
 `Assets/` and build folders stay. Install `rsync` if your system lacks it, and put the new release's
-tag in place of `frame-beta-2`:
+tag in place of `frame-beta-3`:
 
 ```bash
 cd ~/wiicompiled
 mkdir -p release-new
-curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-2.tar.gz \
+curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-3.tar.gz \
     | tar -xz --strip-components=1 -C release-new
 rsync -rcE release-new/ Wiicompiled_VR_Frame/
 rm -rf release-new
@@ -426,8 +432,10 @@ Leave out `--headset steam_frame` and pass `--cpu` for your CPU to get a generic
 it needs an OpenXR runtime with `XR_KHR_vulkan_enable2`. Untested.
 
 ## AI usage
-AI coding tools were used during development of this project. 
-All translated output is verified against real hardware behavior and most importantly, physics accuracy is proven synced across Wii, Dolphin, and WiiCompiled (see FAQ). 
+
+AI coding tools were used during development of this project. Translated output is checked against
+real hardware behaviour and, most importantly, the physics are proven identical across Wii, Dolphin
+and WiiCompiled by ghosts that stay in sync (see [From upstream](#from-upstream)).
 
 ## Credits
 - **inkwreck** - making the logo
@@ -458,7 +466,6 @@ All translated output is verified against real hardware behavior and most import
 
 Bundled third-party components and their licenses live in
 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
-
 
 ## License
 

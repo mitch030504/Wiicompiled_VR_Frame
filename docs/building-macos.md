@@ -2,6 +2,9 @@
 
 This guide covers building **WiiCompiled** (base game) and **Retro Rewind** from source on macOS for Apple Silicon (`arm64`). Follow these instructions to compile the native executables directly.
 
+This is upstream's desktop build and has no VR: OpenXR is not wired for macOS. To play on the Steam
+Frame, follow the [README](../README.md#quick-start) instead.
+
 > [!NOTE]
 > If you only want to build the base game (**WiiCompiled**), look for sections marked **`(Skip if only building WiiCompiled)`** to bypass Retro Rewind and online payload steps.
 

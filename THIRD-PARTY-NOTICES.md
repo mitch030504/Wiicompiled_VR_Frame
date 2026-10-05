@@ -122,7 +122,8 @@ Copyright byuu and the higan team.
 Non-Windows builds use libco's symmetric stackful coroutines in place of Win32 Fibers for guest
 OSThread scheduling (`runtime/src/fiber_manager.cpp`). Vendored in full (all non-Windows
 CPU-architecture backends - amd64, x86, arm, aarch64, ppc, ppc64v2, plus the portable sjlj
-fallback - though this project's x86_64-only target only ever compiles amd64.c) in
+fallback; x86_64 builds compile amd64.c, and the ARM64 builds for the Quest and the Steam Frame
+aarch64.c) in
 `runtime/third_party/libco` from commit `e18e09d634d612a01781168ad4d76be10a7e3bad`.
 Source: <https://github.com/higan-emu/libco>. Full license text:
 `runtime/third_party/libco/LICENSE`.
@@ -139,7 +140,7 @@ trees themselves (fetched by `Launcher/Prepare-Dependencies.ps1`) so end-user bu
 
 | Component | Version | License | Upstream |
 | --- | --- | --- | --- |
-| Dawn (WebGPU) | `v20260603.191052` prebuilt | BSD-3-Clause | <https://dawn.googlesource.com/dawn> |
+| Dawn (WebGPU) | `v20260603.191052` prebuilt; the Quest and Steam Frame builds compile the same revision from source with `aurora-main/patches/dawn` | BSD-3-Clause | <https://dawn.googlesource.com/dawn> |
 | Tint (part of Dawn) | with Dawn | BSD-3-Clause | <https://dawn.googlesource.com/dawn> |
 | DirectXShaderCompiler (`dxcompiler.dll`) | with Dawn | NCSA / University of Illinois Open Source | <https://github.com/microsoft/DirectXShaderCompiler> |
 | SDL | 3.4.4 | zlib | <https://github.com/libsdl-org/SDL> |
@@ -230,6 +231,7 @@ unmodified, with their license texts, in the installer's `licenses/` folder.
 
 | Component | License | Upstream |
 | --- | --- | --- |
+| Steam Frame build tools, fetched by `Launcher/steam-frame-install.sh` and the scripts it runs: the Debian trixie container image and its packages, LLVM 22 (clang, lld; `Launcher/prepare-portable-tools.sh`), CMake, Ninja, the .NET 8 SDK, Dawn's source and its dependencies (`Launcher/build-dawn-linux.sh`), and nodtool | Each its own (Apache-2.0 WITH LLVM-exception, BSD-3-Clause, Apache-2.0, MIT, Debian's per-package licenses, ...) | Pinned in those scripts |
 | Android NDK r29 for Windows (clang, lld, sysroot), fetched by `--build-quest` from Google with a pinned SHA-1 | Android Software Development Kit License Agreement | <https://developer.android.com/studio/terms> |
 | Android NDK r29 aarch64 sysroot, compiler-rt builtins, libunwind and libatomic, fetched by the Quest app's Build on this Quest from Google's Linux NDK zip with pinned SHA-256s | Android Software Development Kit License Agreement | <https://developer.android.com/studio/terms> |
 

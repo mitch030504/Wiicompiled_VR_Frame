@@ -1,12 +1,14 @@
 # WiiCompiled VR for Meta Quest (Android)
 
-Standalone Android/OpenXR build of the Mario Kart Wii recompilation for Quest 1,
-Quest 2, Quest 3, Quest 3S and Quest Pro, and, as the `steamFrame` flavour, for Valve's Steam
-Frame under Lepton (the [README](../README.md#the-android-flavour); the Frame is played with the native SteamOS build). The full design, build
-walkthrough and current status live in [docs/quest-port.md](../docs/quest-port.md); this directory only
-holds the Gradle project, its helper scripts, the game kit tooling
-(`QuestGameKit.psm1`, `Build-QuestGame.ps1`), the on-headset build toolchain
-(`Prepare-QuestToolchain.ps1`, `toolchain/`) and `nod-jni`.
+Standalone Android/OpenXR build of the Mario Kart Wii recompilation for Quest 1, Quest 2,
+Quest 3, Quest 3S and Quest Pro. A `steamFrame` flavour targets Valve's Steam Frame under Lepton,
+but cannot show a picture there; the Frame is played with the native SteamOS build (the
+[README](../README.md#the-android-flavour)).
+
+The full design, build walkthrough and current status live in
+[docs/quest-port.md](../docs/quest-port.md). This directory only holds the Gradle project, its
+helper scripts, the game kit tooling (`QuestGameKit.psm1`, `Build-QuestGame.ps1`), the on-headset
+build toolchain (`Prepare-QuestToolchain.ps1`, `toolchain/`) and `nod-jni`.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File android/Prepare-QuestDependencies.ps1          # stages the SDL3 3.4.4 AAR once

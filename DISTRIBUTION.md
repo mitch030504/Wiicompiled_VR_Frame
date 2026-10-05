@@ -1,4 +1,22 @@
-# Windows VR distribution
+# Distribution
+
+## Steam Frame releases (this fork)
+
+Releases here are **source only**: a `frame-<name>` tag (`frame-beta-2`, ...) and GitHub's source
+archives for it. The game is always built from the player's own clean PAL `RMCP01` disc, so no
+release, issue or download may carry a disc image, extracted game files, translated game code or a
+built game executable, and nobody may share one built from their disc.
+
+To publish one, add its notes as `docs/releases/<tag>.md`, then run **Actions → Steam Frame
+release → Run workflow** with the tag (`.github/workflows/frame-release.yml`). The workflow creates
+the tag on the commit it runs on and publishes a pre-release with those notes; pushing a `frame-*`
+tag runs it as well. The installer (`Launcher/steam-frame-install.sh`) builds the newest release by
+default, so publish only what has been built and installed on a Frame.
+
+## Windows (upstream)
+
+The rest of this file is upstream's process for its Windows installer and is kept for reference.
+This fork does not publish Windows builds; use upstream's releases for those.
 
 Distribute only `WiiCompiled-Setup.exe` and its checksum from
 [iChris4/Wiicompiled_VR](https://github.com/iChris4/Wiicompiled_VR/releases), and

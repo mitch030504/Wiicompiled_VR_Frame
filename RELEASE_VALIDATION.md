@@ -1,5 +1,8 @@
 # WheelWizard VR integration validation
 
+This is upstream's record of validating its Windows release candidates, kept for reference. It does
+not cover this fork's Steam Frame releases (see [`DISTRIBUTION.md`](DISTRIBUTION.md)).
+
 Validated locally on Windows x64 on 2026-09-09. These are release candidates; public release
 acceptance is not complete.
 

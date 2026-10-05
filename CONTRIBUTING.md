@@ -1,11 +1,13 @@
 # Contributing to WiiCompiled
 
-Thanks for wanting to help! A few ground rules
+Thanks for wanting to help! This is the Steam Frame fork of
+[WiiCompiled OpenXR VR](https://github.com/iChris4/Wiicompiled_VR); it follows upstream's ground
+rules, below. Changes that are not specific to the Steam Frame are usually better made upstream.
 
 ## The short version
 
-- Code is judged on quality, not where it came from
-- You must be able understand and be able to explain every line you submit.
+- Code is judged on quality, not where it came from.
+- You must understand, and be able to explain, every line you submit.
 - PR descriptions and responses must be written by you, **not** generated.
 - Accuracy is the bar for anything touching game behavior.
 
@@ -31,23 +33,23 @@ That's ok, but rules apply:
 
 ## Pull requests
 
-- Keep PRs focused. try and keep it at 1 change per PR. 
-  Small PRs get reviewed fast.
+- Keep PRs focused: try to keep it to one change per PR. Small PRs get reviewed fast.
 - Explain **what** and **why**. Reference the issue if there is one.
 - For anything affecting game behavior: identical behavior to real hardware is
   the goal. Be prepared to show your change doesn't diverge from the original
   game (hardware comparison, logs, whatever fits).
-- Review feedback. It's about the code, not about you ;).
+- Take review feedback in stride: it's about the code, not about you ;).
 
 ## Bug reports
 
-See the FAQ in the [README](README.md)
+See [Reporting problems](README.md#reporting-problems) in the README: what you did and saw, plus the
+run's `console.log`. Problems that also happen on a PC or a Quest belong upstream.
 
 ## A note on related projects
 
-WiiCompiled, Wheel Wizard, and other projects in this ecosystem are developed
-independently and each has its **own** contribution rules and all have their own
-rules around AI usage. What applies here does not automatically apply there,
+WiiCompiled, WiiCompiled OpenXR VR, Wheel Wizard and the other projects in this ecosystem are
+developed independently, and each has its **own** contribution rules, including its own rules on
+AI usage. What applies here does not automatically apply there,
 and vice versa. Check each project's own CONTRIBUTING file.
 
 ## Legal

@@ -1,23 +1,30 @@
 # Experimental OpenXR VR
 
-WiiCompiled has an opt-in OpenXR rendering path. The first functional backend is Windows D3D12.
-It asks the OpenXR runtime for the required GPU before Aurora creates Dawn, then copies each eye
-on that same D3D12 device and queue into the acquired OpenXR swapchain images. Eye submission
-stays on the GPU; there is no CPU texture readback and no second graphics device. Windows Vulkan is
-an opt-in second binding built on the same design: the OpenXR runtime creates Dawn's Vulkan instance
-and device (`XR_KHR_vulkan_enable2`) and eyes are copied on that same queue. It needs a custom Dawn
-build; see [Windows Vulkan](#windows-vulkan).
+WiiCompiled has an opt-in OpenXR rendering path with three backends:
+
+- **Windows D3D12**, the first. It asks the OpenXR runtime for the required GPU before Aurora
+  creates Dawn, then copies each eye on that same D3D12 device and queue into the acquired OpenXR
+  swapchain images. Eye submission stays on the GPU; there is no CPU texture readback and no second
+  graphics device.
+- **Vulkan on Windows and Linux**, built on the same design: the OpenXR runtime creates Dawn's
+  Vulkan instance and device (`XR_KHR_vulkan_enable2`) and eyes are copied on that same queue. It
+  needs a Dawn built with Aurora's patches; see [Windows Vulkan](#windows-vulkan). On Linux it is the
+  Steam Frame's native SteamOS build (the [README](README.md)).
+- **Android Vulkan** for the Meta Quest, where the eyes cross from Dawn's device to the backend's own
+  through AHardwareBuffers; see [`docs/quest-port.md`](docs/quest-port.md).
 
 This is an experimental renderer, not yet a release-ready VR mode.
 
 ## Requirements
 
-- A Windows OpenXR runtime selected as the system's active runtime.
-- A connected headset supported by that runtime.
-- A D3D12-capable GPU and driver accepted by both OpenXR and Dawn, or for the opt-in Vulkan
-  binding a Vulkan 1.1+ driver plus the custom Dawn described under [Windows Vulkan](#windows-vulkan).
-- A build made with `MKW_ENABLE_OPENXR=ON`, which defaults on for Windows and off elsewhere while
-  the Vulkan bridge remains capability-gated.
+- An OpenXR runtime selected as the system's active runtime (SteamVR, Virtual Desktop, Meta's PC
+  runtime, ... on Windows; SteamVR on the Steam Frame), and a connected headset it supports.
+- On Windows, a D3D12-capable GPU and driver accepted by both OpenXR and Dawn, or for the opt-in
+  Vulkan binding a Vulkan 1.1+ driver plus the patched Dawn described under
+  [Windows Vulkan](#windows-vulkan). On Linux, the patched Dawn from `Launcher/build-dawn-linux.sh`.
+- A build made with `MKW_ENABLE_OPENXR=ON`, which defaults on for Windows and Android. On Linux it
+  stays opt-in because it needs the patched Dawn: `Launcher/local-build.sh --openxr --dawn-package
+  <dir>`.
 
 For managed installation, use [WheelWizard VR](https://github.com/iChris4/WheelWizard_VR/releases/latest)
 and enable **Settings → Other → WiiCompiled (beta) → Enable WiiCompiled OpenXR VR (beta)**.
@@ -30,8 +37,8 @@ in `Recomp/UserData/Config.toml`. Both backends use the normal installation's ef
 
 Standalone launches start in VR too: this is the VR build, and `required = false` makes a failed
 headset startup fall back to the desktop renderer rather than stop the game. `Config.toml` is
-created with the following defaults, and a configuration that never mentions `enabled` reads the
-same way:
+created with the following defaults (a PC build's; the Quest and Steam Frame defaults that differ are
+given with each key below), and a configuration that never mentions `enabled` reads the same way:
 
 ```toml
 [vr]
@@ -142,8 +149,9 @@ settings are ignored. Completed rendering wakes the XR thread immediately. A 50 
 still protects pauses and window dragging without eager repeats during rendering.
 
 `render_scale` scales the per-eye size recommended by the OpenXR runtime (0.25 to 2, never above the
-runtime's maximum). It defaults to 1.0 on PC and 0.8 on the Quest, whose mobile GPU needs the
-headroom. It is live: **F10 → VR → Render resolution** (also on the headset panel's VR tab) sets it
+runtime's maximum). It defaults to 1.0 on PC and 0.8 on the Quest and the Steam Frame, whose mobile
+GPUs need the headroom (on the Frame, 1.25 is the panels' native 2160x2160).
+It is live: **F10 → VR → Render resolution** (also on the headset panel's VR tab) sets it
 in percent, applies it when the slider is let go, and saves it. Below the slider, *Each eye* gives
 the left eye's size now and, while they differ, the size the slider's value gives.
 
@@ -187,7 +195,8 @@ immersive stereo view, head tracking and all, but is seen only through a window,
 around it on the Quest; see [The immersive window](#the-immersive-window). `flat_screen` wins when
 both are set. The settings present the three as one choice, **Race view**: Immersive, Immersive
 window or Flat screen.
-`passthrough` (Quest only, default on) shows the room through the headset's cameras around the
+`passthrough` (Quest only, default on; the Steam Frame build neither asks for it nor offers it)
+shows the room through the headset's cameras around the
 menu screen and every other virtual screen, instead of black: an `XR_FB_passthrough`
 reconstruction layer submitted under the screen's quad, as PPSSPP VR does, with the blend mode
 left `OPAQUE`. A fully immersive race never shows it, and the cameras are paused for the race; a
@@ -198,8 +207,8 @@ live, from the headset panel's VR tab or the launcher's Settings page. The app d
 So that the room frames the picture rather than black bands, the Quest's menu quad shows only the
 part of its eye-sized image Aurora draws into (the desktop snapshot, and the in-eye settings
 panel's rectangle), at the same size per pixel, so nothing moves.
-`hand_tracking` (Quest only, default off) makes the first-person cockpit's hands follow the
-headset's hand tracking; see "Tracked hands" under
+`hand_tracking` (standalone headsets, default off; tried on the Quest only) makes the first-person
+cockpit's hands follow the headset's hand tracking; see "Tracked hands" under
 [Steering wheel and hand steering](#steering-wheel-and-hand-steering).
 How each eye is replayed is fixed; the former `stop_at_display_copy`, `skip_copy_clears` and
 `single_pass_eyes` settings are ignored. An eye ends at the frame's final `GXCopyDisp`, so it holds
@@ -290,7 +299,8 @@ right A, B, trigger and stick as above, left View as the left menu (+), the left
 `"gamepad"` mode). The table is in the README, Controls.
 
 **Motion.** Each XR frame the aim and grip poses are located at the measured current time
-(`XR_KHR_win32_convert_performance_counter_time`, `XR_KHR_convert_timespec_time` on Android), not
+(`XR_KHR_win32_convert_performance_counter_time`, `XR_KHR_convert_timespec_time` on Android and
+Linux), not
 the predicted display time, whose extrapolation sprays fast wrist motion. The grip's linear
 velocity, averaged with one derived from its position, is differentiated over XrTime into
 acceleration; gravity is added and the result is expressed in the aim pose's frame. KPAD's
@@ -385,8 +395,9 @@ controllers still open the settings panel with left Y, point at it and toggle th
 with a right thumbstick click; they press no game button, drive no Wii Remote, cannot take hold of
 the cockpit's wheel, and the game's rumble does not reach them.
 
-Bindings are suggested for `oculus/touch_controller` (Quest 2, 3 and Pro) and
-`khr/simple_controller`. `mkw_vr_wii_remote_tests` checks the accelerometer frame, the pointer
+Bindings are suggested for `oculus/touch_controller` (Quest 2, 3 and Pro), `khr/simple_controller`
+and, where the runtime offers it, `valve/frame_controller_valve` (the Steam Frame).
+`mkw_vr_wii_remote_tests` checks the accelerometer frame, the pointer
 raycast and debounce, the picture placement and the button profile without a headset.
 
 ## Settings in the headset
@@ -428,7 +439,8 @@ the desktop's ImGui pass of the same frame is recorded.
 
 The panel is shown as a compositor quad layer of its own, submitted over the scene's projection or
 menu quad layer. The compositor samples the 1440 × 1080 canvas directly, so its text stays sharp
-whatever `render_scale` gives the eyes. Every backend (D3D12, Windows Vulkan, Quest) makes the
+whatever `render_scale` gives the eyes. Every backend (D3D12, Vulkan on Windows and Linux, Quest)
+makes the
 panel's swapchain pair the first time the panel opens (two 1440 × 1080 swapchains, plus two shared
 buffers on the Quest) and keeps it for the session. Until then nothing is allocated, and while the
 panel is closed nothing is copied or submitted. While it is open, each frame hands Aurora one more
@@ -566,8 +578,8 @@ in first person, and karts, characters and course objects are simply missing unt
 camera catches up; the race intro's pan shows it too, since the other racers are culled from the
 intro camera's narrow view. `object_culling = false` (F10 > Camera > Object culling, also on the
 headset settings panel's Camera tab) draws them anyway, and takes effect immediately. That is
-the PC's default. The Quest defaults to `true`, the game's own culling, because every model
-drawn costs its GPU twice, once per eye.
+the PC's default. The Quest and the Steam Frame default to `true`, the game's own culling, because
+every model drawn costs their mobile GPUs twice, once per eye.
 
 Measured on a Quest 3 (base game, the first Grand Prix race at Luigi Circuit after the intro, player
 idle, first-person cockpit, `render_scale = 0.8`, foveation medium, six interleaved rounds per
@@ -678,13 +690,15 @@ holding grip no longer reaches the game (a shoulder on the gamepad; the Wii Remo
 leaves the grips unbound for this reason); the triggers, A and the right stick are unchanged. Releasing both grips gives steering back
 to the stick. The settings panel withholds the wheel like any other input.
 
-**A USB wheel.** With a USB wheel and pedals set up (see the README), the wheel drives the race as
+**A USB wheel.** With a USB wheel and pedals set up (see
+[upstream's README](https://github.com/iChris4/Wiicompiled_VR)), the wheel drives the race as
 player 1's GameCube controller. The cockpit's wheel follows its calibrated steering, at the same
 full-lock angle as the stick (`wheel_kart_degrees`, `wheel_bike_degrees`), and hand steering steps
 aside while it drives.
 
-**Tracked hands.** `hand_tracking` (Quest only for now, default off; the Quest launcher's
-Settings > VR and the headset panel's Camera tab, under hand steering, which it needs) poses the
+**Tracked hands.** `hand_tracking` (standalone headsets, default off, so far tried on the Quest only;
+the Quest launcher's Settings > VR and the headset panel's Camera tab, under hand steering, which
+it needs) poses the
 cockpit hands from the headset's hand tracking instead of curling them with the grip. Two hand
 trackers (`XR_EXT_hand_tracking`) are located every XR frame at the display time. While the
 controllers are held the Quest builds the joints from their touch sensors
@@ -810,7 +824,8 @@ short-lived immutable stereo packet. Each sealed GX frame and immersive packet c
 policy-generation tag; a mismatch is rendered in mono and the acquired XR frame is canceled, so an
 asynchronous menu/race transition cannot replay race transforms over unsafe content.
 
-With interpolation off, PC (D3D12 and Windows Vulkan) and standalone (Android Vulkan) pace render-first:
+With interpolation off, PC (D3D12 and Windows Vulkan), the Steam Frame (Linux Vulkan) and the Quest
+(Android Vulkan) pace render-first:
 the pacing thread locates views for an estimated display time (two periods past the last
 prediction), hands Aurora a packet without leaving a compositor frame open, and waits for
 rendering. A 50 ms stall repeats the retained layer; cancellation also advances a keep-alive
@@ -819,7 +834,8 @@ xrBeginFrame, completes backend-specific copy/release work, and ends the frame u
 packet's original render poses with the current compositor display time.
 
 Android Vulkan renders into shared buffers and copies them into newly acquired XR images afterward.
-Both PC bindings acquire images from their non-retained swapchain pair before rendering; Aurora
+The D3D12 and Vulkan bindings (Windows and Linux) acquire images from their non-retained swapchain
+pair before rendering; Aurora
 queues the copy on the session's queue before reporting completion. PC therefore needs no additional
 copy in the short compositor cycle. Pending images remain acquired and separate from the
 retained pair until completion or confirmed cancellation before encoding. GPU failure still
@@ -1030,7 +1046,8 @@ agreement with the HUD's placement, an eye turned away or beyond the window, a s
 
 ## Foveated rendering
 
-On the Quest, `foveation` shades the edges of the immersive race view in 2x2, then 4x4 pixel
+On the Quest and the Steam Frame, `foveation` shades the edges of the immersive race view in 2x2,
+then 4x4 pixel
 blocks, where the headset's lenses blur the picture anyway, and gives the GPU time back for a
 higher `render_scale` or a steadier frame rate. Each eye's render pass runs under a fragment
 density map (`VK_EXT_fragment_density_map`, attached through dynamic rendering). The map is centred
@@ -1051,13 +1068,17 @@ anything drawn outside an immersive race are never foveated.
 `XR_FB_foveation`, the extension DolphinXR uses by default, cannot help here. The runtime's density
 maps only shape render passes that draw into its swapchain images, and on the Quest Dawn draws each
 eye on its own device and hands it to the OpenXR device, which copies it into the swapchain. So the
-map has to go into Dawn's own eye passes. The stock Dawn package has no such feature, so the Quest
-build links a Dawn built with Aurora's patches (`aurora-main/patches/dawn`, built by
-`android/Build-QuestDawn.ps1`, see `docs/quest-port.md`). The patch enables the extension only when
+map has to go into Dawn's own eye passes. (On the Steam Frame Dawn does render on the runtime's
+device, but its eyes are copied into the swapchain afterwards, so the same holds.) The stock Dawn
+package has no such feature, so both link a Dawn built with Aurora's patches
+(`aurora-main/patches/dawn`, built by `android/Build-QuestDawn.ps1` for the Quest, see
+`docs/quest-port.md`, and by `Launcher/build-dawn-linux.sh` for the Frame).
+The patch enables the extension only when
 Aurora asks for it at device creation, and every render pipeline then carries the density-map
 pipeline flag. That is why the launch decides.
 
-A density map forces Adreno into binned rendering, where every extra render pass in an eye stores
+A density map forces Adreno (the Quest's and the Frame's GPU) into binned rendering, where every
+extra render pass in an eye stores
 and reloads the whole eye. DolphinXR measured foveation as a net loss on Mario Kart Wii for exactly
 that reason (its bloom chain splits the frame about 20 times). An eye is therefore foveated only
 when it is drawn in a single render pass, as every eye is by default; an eye that a partial clear still
@@ -1091,14 +1112,16 @@ did (39 to 41.5 FPS).
 ### Eye-tracked foveation
 
 With `eye_tracked_foveation`, a runtime that offers `XR_EXT_eye_gaze_interaction` and reports an eye
-tracker (the Steam Frame's SteamVR) has its gaze pose located for each packet's display time and
+tracker (SteamVR on the Steam Frame) has its gaze pose located for each packet's display time and
 turned into tangents of each eye's view (`vr/eye_gaze.h`), which `AuroraStereoFrame` carries as
 `gaze`/`gazeValid`. Aurora centres the level's rings, each widened by 8 degrees to cover the lag
 and error of tracking, on the gaze snapped to a cell of two map texels (about 3 degrees), keeping up
 to 128 maps per eye, one per cell looked at, and binds a new one once
 its upload completes, the previous map staying bound meanwhile. Without a tracked gaze (a blink, no
-tracker, the setting off) the map is the forward one above, unchanged. The README's How it works
-covers the Steam Frame.
+tracker, the setting off) the map is the forward one above, unchanged. Each map has a memory
+block of its own: the Frame's driver (Turnip) reads a map through a host mapping, and Dawn's buffer
+uploads unmap the shared blocks they sub-allocate from, which crashed the game on a race restart.
+The [README](README.md#how-it-works)'s How it works covers the Steam Frame.
 
 ## Diagnostics
 
@@ -1270,6 +1293,14 @@ the VkQueue only inside `xrBeginFrame`, `xrEndFrame`, `xrAcquireSwapchainImage` 
 `xrReleaseSwapchainImage`, so `OpenXRRuntime::LockGraphicsQueue` holds Dawn's device guard around
 exactly those four calls and never across `xrWaitFrame` or `xrWaitSwapchainImage`.
 
+**Linux (the Steam Frame).** The same file is the Linux backend; only its `_WIN32` parts differ.
+Dawn links statically there, so `Launcher/build-dawn-linux.sh` builds the pinned Dawn with the same
+patches into a package whose `aurora-dawn.json` declares the Vulkan hook and density map ABIs, and
+`Launcher/local-build.sh --openxr --dawn-package <dir>` builds against it. Without those hooks the
+backend fails with *"Linux Vulkan OpenXR requires a Dawn built with Aurora's patches"*. Time
+conversion uses `XR_KHR_convert_timespec_time`, and the extensions the Frame adds (its controller
+profile, `XR_FB_display_refresh_rate`, `XR_EXT_eye_gaze_interaction`) are optional as everywhere.
+
 **Tests.** `mkw_openxr_vulkan_replay_tests` compiles the real backend against the deterministic
 compositor of the D3D12 replay tests, including the queue-guard requirement on acquire and release.
 `vulkan_native_bridge_smoke` (aurora, `AURORA_GPU_SMOKE_TESTS=ON`, real GPU, no headset) drives the
@@ -1286,7 +1317,7 @@ custom DLL's ABI through three borrowed-image copy/readback cycles; run it with 
 | Linux Vulkan (Steam Frame, SteamOS) | Implemented and played on a Steam Frame (beta): the Windows Vulkan design compiled for Linux, so the runtime creates Dawn's own instance and device and the eyes are copied on Dawn's queue with no sharing. Adds the Frame controller profile, 120 Hz and gaze-centred foveation. Needs a Dawn built with Aurora's patches (`Launcher/build-dawn-linux.sh`), then `Launcher/local-build.sh --openxr --dawn-package <dir> --headset steam_frame`. See the README, Quick start. |
 | Other platforms | Not wired yet. |
 
-Both bindings share `openxr_integration.cpp`: the pacing thread, policy evaluation, the
+All backends share `openxr_integration.cpp`: the pacing thread, policy evaluation, the
 retained-layer protocol and the head-pose maths are compiled once against the neutral types in
 `vr/openxr_backend.h`, and only the backend class differs per platform.
 
@@ -1366,7 +1397,8 @@ ends, including mid-frame flushes, so live setting changes cannot invalidate pen
 
 - Only the project's supported PAL `RMCP01` translation has race instrumentation addresses.
 - The tracked controllers are always Player 1's Wii Remote; there is no left-handed swap, and only
-  the Touch and simple controller profiles have suggested bindings. The Wii Remote presentation
+  the Touch, simple controller and Steam Frame profiles have suggested bindings. The Wii Remote
+  presentation
   still needs headset validation: cursor direction and roll, trick/wheelie motion, rumble strength
   and the HOME Menu.
 - The Quest build (`android/`, `docs/quest-port.md`) runs on a Quest 3 through menus and races.
@@ -1384,6 +1416,6 @@ ends, including mid-frame flushes, so live setting changes cannot invalidate pen
   immersive race costs. Hands and a separate VR wheel are seen only through the window.
 - The desktop window remains available as a mirror/fallback.
 
-OpenXR diagnostics are written to the normal run log under
-`%LOCALAPPDATA%\WiiCompiled\Logs`. Search for `OpenXR` when reporting a startup or submission
-failure.
+OpenXR diagnostics are written to the normal run log under `%LOCALAPPDATA%\WiiCompiled\Logs` on
+Windows and `~/.local/share/WiiCompiled/Logs` on Linux (the Steam Frame); the Quest's are covered in
+`docs/quest-port.md`. Search for `OpenXR` when reporting a startup or submission failure.
