@@ -9,6 +9,7 @@
 #include "runtime_config.h"
 #include "gx_thread.h"
 #include "runtime_log.h"
+#include "vr/adaptive_resolution.h"
 #include "vr/eye_gaze.h"
 #include "vr/mkw_vr_culling.h"
 #include "vr/mkw_vr_first_person.h"
@@ -109,6 +110,15 @@ inline constexpr const char* kGraphicsBackendName = "Vulkan";
 inline constexpr bool kWindowShapedEyesSupported = true;
 #else
 inline constexpr bool kWindowShapedEyesSupported = false;
+#endif
+
+// Whether the immersive eyes can be rendered smaller than their swapchain images for
+// [vr] adaptive_resolution: the backend copies them into a corner of the image and its projection
+// layer shows that corner. The Vulkan backends do; the PC's D3D12 one copies whole eyes.
+#if defined(_WIN32)
+inline constexpr bool kScaledEyesSupported = false;
+#else
+inline constexpr bool kScaledEyesSupported = true;
 #endif
 
 struct Quaternion {
@@ -1506,6 +1516,15 @@ private:
                 destination.eyes[eye].height = source.render_height[eye];
             }
         }
+        // The backend shows the part of each image this size fills, so the field of view is kept.
+        if (const float scale = adaptive_scale_.load(std::memory_order_relaxed); kScaledEyesSupported && scale < 1.0f) {
+            for (uint32_t eye = 0; eye < kOpenXREyeCount; ++eye) {
+                source.render_width[eye] = AdaptiveResolution::Scaled(source.render_width[eye], scale);
+                source.render_height[eye] = AdaptiveResolution::Scaled(source.render_height[eye], scale);
+                destination.eyes[eye].width = source.render_width[eye];
+                destination.eyes[eye].height = source.render_height[eye];
+            }
+        }
         // Read once so both eyes are built from the same angle even if the
         // settings slider moves between them.
         const float lean_back_radians =
@@ -1879,7 +1898,21 @@ private:
         const auto now = std::chrono::steady_clock::now();
         const float elapsed = std::chrono::duration<float>(now - timing_start_).count();
         if (elapsed >= 1.0f) {
-            rendered_fps_.store(static_cast<float>(timing_submissions_) / elapsed, std::memory_order_relaxed);
+            const float fps = static_cast<float>(timing_submissions_) / elapsed;
+            rendered_fps_.store(fps, std::memory_order_relaxed);
+            // Measured during races only: menus and loading screens run below 60 on their own.
+            // The target is the game's 60 FPS, or the headset's rate when frames are interpolated.
+            const bool adaptive = kScaledEyesSupported && RuntimeConfigFile::VrAdaptiveResolution();
+            if (!adaptive || last_immersive_) {
+                const float target = aurora_get_stereo_frame_interpolation() ? hz : std::min(hz, 60.0f);
+                const float previous = adaptive_resolution_.Scale();
+                const float scale = adaptive_resolution_.Observe(fps, target, adaptive);
+                adaptive_scale_.store(scale, std::memory_order_relaxed);
+                if (scale != previous) {
+                    RT_LOG(RT_TAG_RUNTIME) << "OpenXR: adaptive resolution " << static_cast<int>(scale * 100.0f + 0.5f)
+                                           << "% (" << fps << " of " << target << " FPS)" << std::endl;
+                }
+            }
             timing_start_ = now;
             timing_submissions_ = 0;
         }
@@ -2031,6 +2064,9 @@ private:
     std::atomic<float> rendered_fps_{0};
     std::chrono::steady_clock::time_point timing_start_ = std::chrono::steady_clock::now();
     uint32_t timing_submissions_ = 0;
+    // [vr] adaptive_resolution: measured on the pacing thread, read where eyes are published.
+    AdaptiveResolution adaptive_resolution_;
+    std::atomic<float> adaptive_scale_{1.0f};
     PFN_xrGetDisplayRefreshRateFB get_display_refresh_rate_ = nullptr;
     PFN_xrEnumerateDisplayRefreshRatesFB enumerate_refresh_rates_ = nullptr;
     PFN_xrRequestDisplayRefreshRateFB request_refresh_rate_ = nullptr;

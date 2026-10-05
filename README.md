@@ -123,6 +123,7 @@ settings back when it closes.
 | `[vr] foveation` | `medium` | `off` shades every pixel and costs the most. See [Known issues](#known-issues) if images double. |
 | `[vr] repeat_frames` | `true` (default) | Without it SteamVR halves the game's rate and fills refreshes itself. |
 | `[vr] frame_interpolation_fps` | `0` | Rendering in-between frames needs 120 eye pairs a second, which made things worse on the Frame. |
+| `[vr] adaptive_resolution` | `false` (default) | Experimental and untested on the Frame. When on, races drop to as little as 70% of `render_scale` while new frames fall behind 60 FPS, and climb back once they keep up. Each step rebuilds the foveation maps; `console.log` records every change as `OpenXR: adaptive resolution`. |
 | `[video] resolution_multiplier` | `2` | The game's own frame, which the eyes are made from. 4x is far too heavy for the Frame's GPU. |
 
 Keep SteamVR's refresh rate at 120 Hz. Motion Smoothing makes no difference to this game.

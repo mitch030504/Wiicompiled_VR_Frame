@@ -460,6 +460,10 @@ target_include_directories(mkw_vr_wii_remote_tests PRIVATE "${CMAKE_CURRENT_LIST
 target_compile_features(mkw_vr_wii_remote_tests PRIVATE cxx_std_17)
 add_test(NAME mkw_vr_wii_remote_tests COMMAND mkw_vr_wii_remote_tests)
 # Eye-tracked foveation: the gaze in each eye's view (vr/eye_gaze.h).
+add_executable(mkw_vr_adaptive_resolution_tests "${CMAKE_CURRENT_LIST_DIR}/tests/vr_adaptive_resolution_tests.cpp")
+target_include_directories(mkw_vr_adaptive_resolution_tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
+target_compile_features(mkw_vr_adaptive_resolution_tests PRIVATE cxx_std_17)
+add_test(NAME mkw_vr_adaptive_resolution_tests COMMAND mkw_vr_adaptive_resolution_tests)
 add_executable(mkw_vr_eye_gaze_tests "${CMAKE_CURRENT_LIST_DIR}/tests/vr_eye_gaze_tests.cpp")
 target_include_directories(mkw_vr_eye_gaze_tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
 target_compile_features(mkw_vr_eye_gaze_tests PRIVATE cxx_std_17)
