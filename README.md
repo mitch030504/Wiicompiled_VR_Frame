@@ -375,6 +375,12 @@ Unraid keeps `/usr/local/bin` in memory, so repeat this after a reboot.
   Vulkan hook and density map ABIs that Aurora compiles against.
 - **Headset only.** The game neither shows nor finishes rendering a desktop window, and is compiled
   for the Frame's Cortex-X4 cores (`-mcpu=cortex-x4`, overridable with `--cpu`).
+- **What it needs from SteamOS.** Dawn, SDL and the OpenXR loader are linked in, and Vulkan and the
+  OpenXR runtime are found at run time. From the system it takes only glibc, libstdc++, libgcc,
+  libpng and zlib, all part of SteamOS, and it is built against glibc symbols that SteamOS 0.4.3's
+  glibc 2.39 has (`ldd ~/devkit-game/WiiCompiled/WiiCompiled` lists them and flags anything
+  missing). Steam starts it in Steam Linux Runtime 4 (`SteamLinuxRuntime_4-arm64`), which brings
+  its own copies; started from a terminal it uses SteamOS's.
 - **Every refresh from the game.** The game draws 60 frames a second. When it handed SteamVR only
   those, SteamVR ran it at half rate and made up every other refresh itself, even with Motion
   Smoothing off. With `[vr] repeat_frames`, the pacing thread waits for the next frame until 1.5 ms
