@@ -99,7 +99,7 @@ Usage: local-build.sh --output-dir DIR [options]
   --dawn-package DIR              A Dawn built with Aurora's patches (Launcher/build-dawn-linux.sh's
                                    WORK_DIR/package); build it with the same --cc/--cxx
   --headset NAME                  steam_frame: the Steam Frame's native SteamOS build and its defaults
-                                   (docs/steam-frame.md); empty for any other PC headset
+                                   (README.md); empty for any other PC headset
   --cpu NAME                      AArch64 -mcpu target (default: cortex-x4 with --headset steam_frame,
                                    else native)
 EOF
