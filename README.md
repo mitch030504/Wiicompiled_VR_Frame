@@ -9,50 +9,65 @@
   <a href="LICENSE"><img alt="License: GPLv3" src="https://img.shields.io/badge/license-GPLv3-2EA44F?logo=gnu&amp;logoColor=white"></a>
 </p>
 
-Mario Kart Wii in VR on Valve's Steam Frame, running natively on SteamOS: a fork of
-[WiiCompiled OpenXR VR](https://github.com/iChris4/Wiicompiled_VR) (itself built on
-[WiiCompiled](https://github.com/patchzyy/Wiicompiled)), the static recompilation of Mario Kart Wii
-to native code. There is no emulator, interpreter or JIT at runtime: your own disc is translated to
-C++ and compiled for the Frame's ARM64 CPU, and it renders through SteamVR's OpenXR runtime.
+Mario Kart Wii in VR on Valve's Steam Frame, running natively on SteamOS. It is built on
+[WiiCompiled](https://github.com/patchzyy/Wiicompiled), the static recompilation of Mario Kart Wii
+to native code, and its VR fork [WiiCompiled OpenXR VR](https://github.com/iChris4/Wiicompiled_VR).
+Nothing is emulated: your own disc is translated to C++, compiled for the Frame's ARM64 processor,
+and drawn through SteamVR.
 
 > [!IMPORTANT]
-> There is no Nintendo code, no assets and no game data anywhere in this project. You need your
-> own legally dumped copy of the PAL version of the game; the translation runs on your machine
-> against your disc image, and nothing is uploaded.
+> This project contains no Nintendo code, assets or game data. You need your own dump of the PAL
+> disc. The game is built from it on your own machine, and nothing is uploaded or shared.
 
 > [!WARNING]
-> **Beta.** It runs on a Steam Frame: SteamVR, both eyes at the panels' 2160x2160, the Frame's
-> controllers, 120 Hz with every game frame shown, and foveation that follows your eyes. It is not
-> finished: images still double in races and on the HUD, and the foveation tracks the right eye
-> less well than the left (see [Known issues](#known-issues)). Reports with the run log move it
-> forward (see [Reporting problems](#reporting-problems)).
+> **Beta.** It plays on the Steam Frame at the panels' full 2160x2160 per eye, at 120 Hz, with the
+> Frame's controllers and foveation that follows your eyes. Some images still double in races and
+> on the HUD (see [Known issues](#known-issues)).
+
+**Contents:** [Quick start](#quick-start) · [Updating](#updating) ·
+[Recommended settings](#recommended-settings) · [Controls](#controls) ·
+[Known issues](#known-issues) · [Troubleshooting](#troubleshooting) ·
+[Other ways to build](#other-ways-to-build) · [How it works](#how-it-works) · [FAQ](#faq) ·
+[Credits](#credits)
 
 ---
 
 ## Quick start
 
-This is the whole way from your disc to playing in the headset. An install script does the work: it
-downloads the newest [release](https://github.com/mitch030504/Wiicompiled_VR_Frame/releases),
-extracts your disc, builds the game in an ARM64 container on your PC, copies it and the disc to the
-Frame, and adds it to your Steam library. Releases are source only: the game is always built from
-your own disc, so there is nothing ready-built to download. The first build takes a few hours, most
-of it compiling Dawn under emulation; later builds reuse it.
+One script takes you from your disc to the game in your Steam library. It downloads the newest
+[release](https://github.com/mitch030504/Wiicompiled_VR_Frame/releases) (currently `frame-beta-3`),
+extracts your disc, builds the game in an ARM64 container, installs it on the Frame and adds it to
+Steam. Releases hold only source code: the game is always built from your own disc.
 
-**You need:**
+### Where to build
+
+You can run the script on a Linux PC or on the Frame itself:
+
+| | On a Linux PC | On the Frame |
+| --- | --- | --- |
+| First build | A few hours on an x86_64 PC (ARM64 is emulated), mostly building Dawn | Slower, and the Frame needs to stay on its charger |
+| Updates | Run from the PC | Also from the **Updates** tab inside the game |
+| Install option | `--frame steamos@<frame-ip>` | `--frame local` |
+
+Later builds reuse what the first one built, so updates usually take minutes.
+
+### You need
+
 - a Steam Frame with Developer Mode on (Steam Settings → System → Enable Developer Mode, then set a
-  user password), on the same network as your PC;
-- your own clean PAL `RMCP01` disc of Mario Kart Wii: an ISO, WBFS or RVZ image (WIA, CISO, GCZ
-  and NFS work too), as is or in a `.zip` or `.7z`, or a folder you extracted it to;
-- an x86_64 Linux PC with about 20 GB free and 16 GB of memory or more.
-
-The PC commands below work in bash, zsh and fish.
+  user password);
+- your own clean PAL `RMCP01` disc of Mario Kart Wii, as an ISO, WBFS, RVZ, WIA, CISO, GCZ or NFS
+  image, inside a `.zip` or `.7z` if you like, or as an extracted folder;
+- about 20 GB free where the build goes (`~/wiicompiled-frame`, or another folder with
+  `--work-dir`);
+- to build on a PC: Linux on x86_64 or ARM64 with 16 GB of memory or more, on the same network as
+  the Frame.
 
 > [!NOTE]
-> Nobody here will tell you where to get the game. Dumping your own disc is on you, and links to
-> game files won't be provided or tolerated. For the same reason there is no ready-built game to
-> download: releases hold the source, and the game is always built from your own disc.
+> Nobody here will tell you where to get the game, and links to game files are not tolerated.
 
-### 1. Set up ARM64 emulation on the PC
+### 1. Set up the container (PC only)
+
+The build runs in a Debian ARM64 container. On an x86_64 PC, set up podman with ARM64 emulation:
 
 ```bash
 sudo pacman -S --needed podman qemu-user-static qemu-user-static-binfmt   # Arch, CachyOS
@@ -60,100 +75,112 @@ sudo systemctl restart systemd-binfmt
 podman run --rm --platform linux/arm64 docker.io/library/debian:trixie uname -m
 ```
 
-The last command must print `aarch64`. On Debian or Ubuntu install `podman qemu-user-static
+The last command must print `aarch64`. On Debian or Ubuntu, install `podman qemu-user-static
 binfmt-support` instead. If podman complains about subordinate ids, run
 `sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 $USER` and log in again.
-Docker works too, in place of podman.
+Docker works in place of podman. An ARM64 PC needs only podman or Docker, and the Frame already
+has podman.
 
 ### 2. Run the installer
 
-With the path to your disc image and your Frame's address:
+From a PC, with your disc image and the Frame's address:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/openxr-work/Launcher/steam-frame-install.sh \
     | bash -s -- --disc "/path/to/Mario Kart Wii.wbfs" --frame steamos@<frame-ip>
 ```
 
-- `--disc` takes the image whatever its name or extension; the format is read from the file
-  itself. A `.zip` or `.7z` is unpacked first (with 7-Zip, bsdtar or unzip if you have one, in a
-  container otherwise), and the disc image inside it is found and used. It checks the game ID
-  before building and stops on any disc other than PAL `RMCP01`.
-- It asks for the Frame's password when it gets there. If you use
-  [Frame Control](https://github.com/saphid/frame-control), pass `--frame frame` instead: its SSH
-  key answers to that name.
-- Everything it builds lives in `~/wiicompiled-frame` (`--work-dir` to change that): the toolchain,
-  Dawn, the source, the extracted disc and the build log, `build.log`.
-- It runs as many compiles at once as fit in memory (a quarter of your memory in GB). If the machine
-  still freezes, run it again with a lower `--jobs`, such as `--jobs 2`.
-- If it stops for any reason, the same command picks up where it left off.
-- On the Frame, the game goes to `~/devkit-game/WiiCompiled/` and the disc to `~/wiicompiled/disc`.
-  It is added to your Steam library through Valve's devkit tools in `~/devkit-utils`, which Frame
-  Control and Valve's Devkit Client put there. Without them, the script says how to add it once
-  yourself. Steam must be running on the Frame for this step.
-- Add `--retro-rewind` to also build [Retro Rewind](https://wiki.tockdom.com/wiki/Retro_Rewind).
-  The script downloads its pack (about 4 GB) from Retro Rewind's own update server, as Wheel Wizard
-  does, and later runs apply only the updates published since. It also fetches the Retro-WFC
-  payload online play needs. On the Frame, Retro Rewind goes to `~/devkit-game/RetroRewind/` and
-  its pack to `~/wiicompiled/RetroRewind6`, and it shares WiiCompiled's settings.
-  `--retro-rewind-pack DIR` uses a RetroRewind6 folder you already have instead.
-- `--help` lists every option. From a downloaded release, run `Launcher/steam-frame-install.sh`
-  with the same options: it then builds that release's source.
+Or on the Frame, over SSH (`ssh steamos@<frame-ip>`) or in a Desktop Mode terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/openxr-work/Launcher/steam-frame-install.sh \
+    | bash -s -- --disc "/path/to/Mario Kart Wii.wbfs" --frame local
+```
+
+The script checks that the disc is PAL `RMCP01` before building, and stops on any other. If it
+stops for any reason, the same command picks up where it left off. From a PC, it asks for the
+Frame's password when it gets there. Steam must be running on the Frame for the last step, adding
+the game to the library.
+
+Useful options (`--help` lists them all):
+
+| Option | What it does |
+| --- | --- |
+| `--retro-rewind` | Also builds [Retro Rewind](https://wiki.tockdom.com/wiki/Retro_Rewind) and adds it to Steam as **RetroRewind**. Its pack (about 4 GB) comes from Retro Rewind's own update server, as Wheel Wizard fetches it, along with the Retro-WFC payload online play needs. It shares WiiCompiled's settings. |
+| `--retro-rewind-pack DIR` | Uses a RetroRewind6 folder you already have instead of downloading one. |
+| `--work-dir DIR` | Where the build lives instead of `~/wiicompiled-frame`, such as a folder on the Frame's SD card. |
+| `--jobs N` | How many files compile at once. It defaults to a quarter of your memory in GB; lower it, to `--jobs 2` for example, if the machine freezes. |
+| `--frame frame` | With [Frame Control](https://github.com/saphid/frame-control) set up, its SSH key answers to `frame`, so no password is asked. |
+| `--release TAG` | Builds a given release instead of the newest. |
+
+Leaving out `--frame` only builds the game, into `out` in the work dir.
+
+On the Frame the game goes to `~/devkit-game/WiiCompiled/`. Installed from a PC, the disc goes to
+`~/wiicompiled/disc`; with `--frame local` it stays in the work dir. Adding the game to Steam uses
+Valve's devkit tools in `~/devkit-utils`, which Frame Control and Valve's Devkit Client put there;
+without them, the script says how to add it yourself.
 
 ### 3. Play
 
-Start **WiiCompiled** from the library in the headset. Open the settings panel with the left
-shoulder button, go to the **VR** tab and set the [recommended settings](#recommended-settings).
+Start **WiiCompiled** from your library in the headset. Press the left shoulder button for the
+settings panel, and set the [recommended settings](#recommended-settings) on its **VR** tab.
 
-### Updating
+## Updating
+
+### From the machine you installed from
 
 ```bash
-Launcher/steam-frame-install.sh --update
+curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/openxr-work/Launcher/steam-frame-install.sh \
+    | bash -s -- --update
 ```
 
-`--update` reuses the options the install was made with, so there is nothing to repeat: it reads
-them from `install.conf` in the work dir, and any option you do pass wins over the saved one. It
-downloads the newest release, puts only the files that changed over the old source, rebuilds what
-they touch, and replaces the game on the Frame. Dawn is only rebuilt when a release changes its
-patches (the release notes say so), so an update usually takes minutes. When the Frame already has
-the newest release, and the newest Retro Rewind pack if you use one, it says so and builds nothing.
+`--update` reuses the options you installed with, which the install saved in `install.conf` in the
+work dir. Add `--work-dir` if you used one; any option you pass wins over the saved one. It
+downloads the newest release, rebuilds only what changed and replaces the game on the Frame. When
+the Frame already has the newest release (and the newest Retro Rewind pack, if you use it), it says
+so and builds nothing. `--check` only says whether an update is available.
 
-`--check` only reports whether an update is available. `--release <tag>` builds a given release
-instead. Running the whole install command again works as it always did.
+An install made with `--frame local` keeps a copy of the script in its work dir, so on the Frame
+`~/wiicompiled-frame/steam-frame-install.sh --update` works too.
 
-### Updating from inside the game
+### From inside the game
 
-An install built on the Frame itself (`--frame local`, [below](#other-ways-to-build)) can update
-itself: the settings panel grows an **Updates** tab with the release you are running and a **Check
-for updates** button, and when there is one, **Update now** builds it in the background. The tab
-shows each step and how far the build is while you keep playing (the game may stutter while it
-compiles), and says when to restart the game to use the update.
+An install made on the Frame with `--frame local` adds an **Updates** tab to the settings panel. It
+shows the release you are running; **Check for updates** looks for a new one, and **Update now**
+builds it in the background while you keep playing (the game can stutter while it compiles). The
+tab shows each step and how far the build is, and tells you when to restart the game. If you close
+the game meanwhile, the update carries on and opens the game again when it is done. Keep the Frame
+on its charger while it runs.
 
-The update runs as a systemd user service (`wiicompiled-update.service`), behind the game in line
-for the processor, so it carries on if you close the game, and then opens the game again when it is
-done. Keep the Frame on its charger for it. Installed from a PC, the tab says so and the update is
-run there. Progress is not shown as Steam notifications: on the Frame, Steam receives them from
-SteamOS's notification service but does not display them.
+The update runs as the systemd user service `wiicompiled-update.service`, at low priority so the
+game comes first. Installed from a PC, the tab says to update from the PC instead. Progress is not
+shown as Steam notifications, because Steam on the Frame does not display them.
+
+### Coming from frame-beta-2 or earlier
+
+Older installs saved no options for `--update` to reuse. Update once with the full install command
+from [step 2](#2-run-the-installer) (you can leave out `--disc`); from then on `--update` works. To
+get the in-game Updates tab, make that install on the Frame with `--frame local`.
 
 ## Recommended settings
 
-All of these are in the headset's settings panel (left shoulder button, **VR** tab) and in
-`~/.local/share/WiiCompiled/Config.toml`. Quit the game before editing the file; it writes its
-settings back when it closes.
+All of these are on the settings panel's **VR** tab and in `~/.local/share/WiiCompiled/Config.toml`
+on the Frame. Quit the game before editing the file, since the game saves its settings to it.
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| `[vr] render_scale` | `1.25` | Scales SteamVR's recommended eye size, 1728x1728 on the Frame: 1.25 is the panels' native 2160x2160, which the Frame renders in 9 to 11 ms a frame with medium foveation. |
-| `[vr] foveation` | `medium` | `off` shades every pixel and costs the most. See [Known issues](#known-issues) if images double. |
-| `[vr] repeat_frames` | `true` (default) | Without it SteamVR halves the game's rate and fills refreshes itself. |
-| `[vr] frame_interpolation_fps` | `0` | Rendering in-between frames needs 120 eye pairs a second, which made things worse on the Frame. |
-| `[vr] adaptive_resolution` | `false` (default) | Experimental and untested on the Frame. When on, races drop to as little as 70% of `render_scale` while new frames fall behind 60 FPS, and climb back once they keep up. Each step rebuilds the foveation maps; `console.log` records every change as `OpenXR: adaptive resolution`. |
+| `[vr] render_scale` | `1.25` | 1.25 times SteamVR's recommended 1728x1728 is the panels' native 2160x2160, which the Frame renders in 9 to 11 ms a frame with medium foveation. |
+| `[vr] foveation` | `medium` (default) | `off` shades every pixel and costs the most. See [Known issues](#known-issues) if images double. |
+| `[vr] repeat_frames` | `true` (default) | Without it SteamVR halves the game's rate and fills in refreshes itself. |
+| `[vr] frame_interpolation_fps` | `0` (default) | In-between frames need 120 eye pairs a second, which made things worse on the Frame. |
+| `[vr] adaptive_resolution` | `false` (default) | Experimental and not yet tried in a race on the Frame. When on, races drop to as little as 70% of `render_scale` while frames fall behind 60 FPS, and climb back once they keep up. |
 | `[video] resolution_multiplier` | `2` | The game's own frame, which the eyes are made from. 4x is far too heavy for the Frame's GPU. |
 
-Keep SteamVR's refresh rate at 120 Hz. Motion Smoothing makes no difference to this game.
+Keep SteamVR at 120 Hz. Motion Smoothing makes no difference to this game.
 
 ## Controls
 
-The Frame's controllers are bound through their own profile, so the left D-pad works:
+The Frame's controllers have their own bindings, so the left D-pad works:
 
 | Frame controller | Wii Remote mode | Gamepad mode |
 | --- | --- | --- |
@@ -170,26 +197,25 @@ The Frame's controllers are bound through their own profile, so the left D-pad w
 
 ## Known issues
 
-- **Doubled images** in races and on the HUD, worst while racing, sometimes in the right eye only.
-  Both eyes get the same frames, so a doubling in one eye points at foveation: the Frame's driver
-  (Turnip) draws a foveated screen tile at lower resolution and scales it back up, and each eye's
-  density maps change with its gaze. Try foveation **Off** if it bothers you, and report whether it
-  helped.
-- **Foveation follows the right eye less well** than the left. Convergence on near content (the HUD
-  screen at 2 m, the cockpit) is not yet corrected for.
+- **Doubled images** in races and on the HUD, worst while racing and sometimes in one eye only.
+  Foveation is the main suspect: the Frame's graphics driver draws the outer areas at lower
+  resolution and scales them up, and each eye's foveation follows its own gaze. Try foveation
+  **Off** if it bothers you, and report whether it helped.
+- **Foveation follows the right eye less well** than the left. Eyes converging on near things (the
+  HUD screen, the cockpit) are not yet corrected for.
 - **VR frame interpolation** is not recommended on the Frame.
-- **The Quest app's `steamFrame` flavour** cannot show a picture in the Frame's Android layer
-  ([below](#the-android-flavour)). Use the native build.
+- **The Quest app's Steam Frame version** shows no picture in the Frame's Android layer (see
+  [How it works](#how-it-works)). Use this native build.
 
 ## Troubleshooting
 
-**Everything at once.** From the PC, `Launcher/frame-diagnostics.sh --frame steamos@<frame-ip>` (or
-`--frame frame` with Frame Control) gathers the newest runs' logs and crash files, `Config.toml`,
-SteamVR's logs, the GPU and Vulkan driver, and the system's state into one `.tar.gz`. Its
-`summary.txt`, also printed at the end, gives the startup steps below that the newest run reached.
-`--help` lists the options.
+**Collect everything at once.** From a PC, run
+`Launcher/frame-diagnostics.sh --frame steamos@<frame-ip>` from the source
+(`~/wiicompiled-frame/source` after an install). It gathers the newest runs' logs and crash files,
+`Config.toml`, SteamVR's logs, the GPU driver and the system's state into one `.tar.gz`, and its
+`summary.txt` says how far the newest run got through the startup steps below.
 
-**Logs.** Each run gets a folder under `~/.local/share/WiiCompiled/Logs/` on the Frame, holding
+**Logs.** Each run gets a folder under `~/.local/share/WiiCompiled/Logs/` on the Frame, with
 `console.log` and, after a crash, `crash_sigsegv.txt`. A working start logs, in order:
 
 1. `OpenXR initialized: runtime 'SteamVR/OpenXR'`;
@@ -201,41 +227,80 @@ SteamVR's logs, the GPU and Vulkan driver, and the system's state into one `.tar
 7. `OpenXR eye gaze: available`, then `tracking`.
 
 The first one missing says where it stopped. `Linux Vulkan OpenXR requires a Dawn built with
-Aurora's patches` means the game was built without `--dawn-package`.
+Aurora's patches` means the game was built by hand without `--dawn-package`.
 
-**Smoothness.** With `[diagnostics] openxr_logging = true`, the log gets a pacing line every second:
+**Smoothness.** With `[diagnostics] openxr_logging = true` in `Config.toml`, the log gets a pacing
+line every second. On the Frame:
 
 ```bash
-ssh frame 'cd ~/.local/share/WiiCompiled/Logs && d=$(ls -t | head -1) && grep -h "xr-diag\] 1.0" "$d/console.log" | tail -5'
+cd ~/.local/share/WiiCompiled/Logs && grep -h "xr-diag\] 1.0" "$(ls -t | head -1)/console.log" | tail -5
 ```
 
-A healthy race reads `predicted-rate=120.0Hz`, `new=60 repeat=60` and `late=0`. Fewer than 60 `new`
+A smooth race reads `predicted-rate=120.0Hz`, `new=60 repeat=60` and `late=0`. Fewer than 60 `new`
 frames means the GPU is over budget: lower `render_scale` or `resolution_multiplier`.
 
-**Crashes.** `console.log` then names the faulting thread and gives its pc and a backtrace as
-`module+offset`. On the build machine,
-`addr2line -f -C -e ~/wiicompiled-frame/source/native-build/WiiCompiled 0x<offset>` turns an offset
-in `WiiCompiled` into a function: the executable is not stripped. (Built by hand, the executable is
-in `~/wiicompiled/Wiicompiled_VR_Frame/native-build/`.)
+**Crashes.** `console.log` names the crashed thread and gives a backtrace as `module+offset`. On the
+build machine, `addr2line -f -C -e ~/wiicompiled-frame/source/native-build/WiiCompiled 0x<offset>`
+turns an offset in `WiiCompiled` into a function name.
 
-**Building.** The install script's log is `~/wiicompiled-frame/build.log`; its end says why a build
-stopped. A build that freezes the machine has run out of memory: lower `--jobs` (or, by hand,
-`--parallel`). A missing CMake package means installing its `-dev` package in the container and
-running the same command again.
+**Builds.** The log is `build.log` in the work dir, and its end says why a build stopped. A build
+that freezes the machine has run out of memory: run it again with a lower `--jobs`.
 
-## Building by hand
+**In-game updates.** The Updates tab shows the step that failed. The full output is in the Frame's
+journal, `journalctl --user -u wiicompiled-update.service`, and the build's in `build.log` in the
+work dir.
 
-These are the steps the install script runs, for when you want to see or change each one. Set up
-emulation as in [Quick start](#quick-start) step 1 first.
+### Reporting problems
 
-### 1. Download the release and extract your disc
+Open an [issue](https://github.com/mitch030504/Wiicompiled_VR_Frame/issues) saying what you did and
+what you saw (which eye, where in the picture, racing or in menus). Attach the diagnostics archive,
+or at least the run's `console.log`; for a build problem, the end of `build.log`. Problems that also
+happen on a PC or a Quest belong upstream, in
+[WiiCompiled OpenXR VR](https://github.com/iChris4/Wiicompiled_VR).
 
-Take the newest release from the [Releases](https://github.com/mitch030504/Wiicompiled_VR_Frame/releases)
-page; the commands use `frame-beta-1`, so put the newest release's tag in its place:
+## Other ways to build
+
+### On a server
+
+The script runs with Docker as well as podman, and much faster with more cores and memory. A
+machine that can't reach the Frame builds without `--frame`; give it more compiles at once if it has
+the memory, such as `--jobs 8` for 32 GB:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/openxr-work/Launcher/steam-frame-install.sh \
+    | bash -s -- --disc "/path/to/Mario Kart Wii.wbfs" --jobs 8
+```
+
+Run it in `tmux` or `screen` so a closed SSH session doesn't stop it. Then copy
+`~/wiicompiled-frame/out` and `~/wiicompiled-frame/disc` to the Frame as in
+[By hand, step 3](#3-install-on-the-frame).
+
+On some hosts, such as Unraid 7 with kernel 6.18, `binfmt_misc` registrations are per container:
+`tonistiigi/binfmt --install arm64` reports success, but Debian answers `exec format error`.
+Register qemu on the host instead, with the `P` flag the tonistiigi build of qemu expects (without
+it every program loses its first argument, and `uname -m` prints `Linux`):
+
+```bash
+docker create --name qemu-src tonistiigi/binfmt
+docker cp qemu-src:/usr/bin/qemu-aarch64 /usr/local/bin/qemu-aarch64
+docker rm qemu-src
+echo ':qemu-aarch64:M::\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xb7\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/local/bin/qemu-aarch64:POCF' > /proc/sys/fs/binfmt_misc/register
+docker run --rm --platform linux/arm64 debian:trixie uname -m   # aarch64
+```
+
+Unraid keeps `/usr/local/bin` in memory, so repeat this after a reboot.
+
+### By hand
+
+These are the steps the install script runs, for when you want to see or change one. Set up the
+container as in [Quick start](#1-set-up-the-container-pc-only) first. The commands use
+`frame-beta-3`; put the newest release's tag in its place.
+
+#### 1. Download the release and extract your disc
 
 ```bash
 mkdir -p ~/wiicompiled/Wiicompiled_VR_Frame; cd ~/wiicompiled
-curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-1.tar.gz \
+curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-3.tar.gz \
     | tar -xz --strip-components=1 -C Wiicompiled_VR_Frame
 curl -fL -o nodtool https://github.com/encounter/nod/releases/download/v2.0.0-alpha.10/nodtool-linux-x86_64
 chmod +x nodtool
@@ -244,15 +309,16 @@ mkdir -p Wiicompiled_VR_Frame/Assets
 cp disc-extract/sys/main.dol disc-extract/files/rel/StaticR.rel Wiicompiled_VR_Frame/Assets/
 ```
 
-`disc-extract` must hold `sys/` and `files/` directly; keep it, the game reads it when it runs.
+`disc-extract` must hold `sys/` and `files/` directly. Keep it: the game reads it while it runs. On
+an ARM64 machine, download `nodtool-linux-aarch64` instead.
 
-### 2. Build, inside an ARM64 container
+#### 2. Build, inside an ARM64 container
 
 ```bash
 podman run -it --name wiicompiled-frame --platform linux/arm64 -v ~/wiicompiled:/work docker.io/library/debian:trixie bash
 ```
 
-Then, in the container's bash prompt:
+Then, at the container's prompt:
 
 ```bash
 apt-get update && apt-get install -y --no-install-recommends \
@@ -275,20 +341,21 @@ exit
 
 - Dawn is done when it prints `Patched Dawn for Linux ready`, the game when it prints
   `MKWCBUILD:OUTPUT=/work/out`.
-- `--jobs 4` and `--parallel 4` suit 16 GB of memory. Compiles take more memory under emulation, and
-  16 at once froze a 16 GB laptop. Use 8 with 32 GB.
-- If it stops, `podman start -ai wiicompiled-frame` gets you back in. Run `cd /work/Wiicompiled_VR_Frame;
-  T=/work/tools/toolchain-aarch64/bin`, then the step that stopped: both scripts resume.
+- `--jobs 4` and `--parallel 4` suit 16 GB of memory, since compiles take more memory under
+  emulation. Use 8 with 32 GB.
+- If it stops, `podman start -ai wiicompiled-frame` gets you back in. Run
+  `cd /work/Wiicompiled_VR_Frame; T=/work/tools/toolchain-aarch64/bin`, then the step that stopped:
+  both scripts resume.
+- On the Frame or another ARM64 machine, start the container without `--platform linux/arm64`.
 
-### 3. Install on the Frame
+#### 3. Install on the Frame
 
-The easiest way is [Frame Control](https://github.com/saphid/frame-control): set up its connection
-to the Frame, then drag `~/wiicompiled/out` onto **Send to Frame**. Name it `WiiCompiled` and keep
-**Launches** on `WiiCompiled`. It adds the game to your Steam library, in `~/devkit-game/WiiCompiled/`
-on the Frame.
+With [Frame Control](https://github.com/saphid/frame-control), drag `~/wiicompiled/out` onto
+**Send to Frame**, name it `WiiCompiled` and keep **Launches** on `WiiCompiled`. That adds it to
+your Steam library, in `~/devkit-game/WiiCompiled/` on the Frame.
 
-Then copy the disc over and, on a first install, tell the game where it is (Frame Control's SSH
-key answers to `frame`; use `steamos@<frame-ip>` otherwise):
+Then copy the disc over and tell the game where it is (Frame Control's SSH key answers to `frame`;
+use `steamos@<frame-ip>` otherwise):
 
 ```bash
 ssh frame mkdir -p wiicompiled
@@ -296,219 +363,132 @@ scp -r ~/wiicompiled/disc-extract frame:wiicompiled/disc
 ssh frame 'mkdir -p ~/.local/share/WiiCompiled && printf "[paths]\ndvd_root = \"/home/steamos/wiicompiled/disc\"\n" > ~/.local/share/WiiCompiled/Config.toml'
 ```
 
-Without Frame Control, `scp -r ~/wiicompiled/out frame:wiicompiled/` and start
-`~/wiicompiled/out/WiiCompiled` from a terminal in the Frame's Desktop Mode, with SteamVR running.
+The last line replaces `Config.toml`, so run it on a first install only. Without Frame Control,
+`scp -r ~/wiicompiled/out frame:wiicompiled/` and start `~/wiicompiled/out/WiiCompiled` from a
+terminal in the Frame's Desktop Mode, with SteamVR running.
 
-### Updating by hand
+#### Updating by hand
 
-When a new release comes out, put its changed files over the old source, rebuild, and replace only
-the executable. `rsync -c` copies just the files whose content changed and stamps them with the
-current time, so the build recompiles exactly those. Unpacking over the source would restore each
-file's commit date, which can be older than the last build, and changes would be skipped. Your
-`Assets/` and build folders stay. Install `rsync` if your system lacks it, and put the new release's
-tag in place of `frame-beta-2`:
+Copy the new release's changed files over the old source, rebuild, and replace only the executable.
+`rsync -c` copies just the files whose content changed and stamps them with the current time, so
+the build recompiles exactly those; unpacking straight over the source would keep each file's
+older commit date, and changes could be skipped. Your `Assets/` and build folders stay.
 
 ```bash
 cd ~/wiicompiled
 mkdir -p release-new
-curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-2.tar.gz \
+curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-3.tar.gz \
     | tar -xz --strip-components=1 -C release-new
 rsync -rcE release-new/ Wiicompiled_VR_Frame/
 rm -rf release-new
 podman start -ai wiicompiled-frame
 # in the container: cd /work/Wiicompiled_VR_Frame; T=/work/tools/toolchain-aarch64/bin, then the
-# build-dawn-linux.sh and local-build.sh lines from step 2, then exit. Dawn only rebuilds when the
-# release changed its patches (the release notes say so); otherwise both finish quickly.
+# build-dawn-linux.sh and local-build.sh lines from step 2, then exit. Dawn is only rebuilt when the
+# release changed its patches (the release notes say so).
 scp ~/wiicompiled/out/WiiCompiled frame:devkit-game/WiiCompiled/WiiCompiled.new
 ssh frame 'cd ~/devkit-game/WiiCompiled && chmod 755 WiiCompiled.new && mv -f WiiCompiled.new WiiCompiled'
 ```
 
-The executable is copied under a new name and moved into place, which works even while an old copy
-is open.
-
-## Other ways to build
-
-**On the Frame itself.** SteamOS's root file system is read-only, but it ships podman, and the
-install script runs there too. Over SSH (`ssh steamos@<frame-ip>`), or in a Desktop Mode terminal:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/openxr-work/Launcher/steam-frame-install.sh \
-    | bash -s -- --disc "/path/to/Mario Kart Wii.wbfs" --frame local
-```
-
-It is native ARM64, so no emulation, but the Frame has less memory and cooling than a PC; keep it
-on its charger. The game then reads the disc straight from `~/wiicompiled-frame/disc`, and this is
-the install that can [update itself from inside the game](#updating-from-inside-the-game). By hand, the
-steps under [Building by hand](#building-by-hand) work the same in a container started without
-`--platform linux/arm64`, with `nodtool-linux-aarch64` in place of `nodtool-linux-x86_64`.
-
-**On a stronger machine** (a server, for example). The script works with Docker as well as podman,
-and runs much faster with more cores and memory. A machine that cannot reach the Frame builds
-without `--frame`; give it more compiles at once if it has the memory, `--jobs 8` for 32 GB:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/openxr-work/Launcher/steam-frame-install.sh \
-    | bash -s -- --disc "/path/to/Mario Kart Wii.wbfs" --jobs 8
-```
-
-Run it in `tmux` or `screen` so a closed SSH session does not stop it. Copy `~/wiicompiled-frame/out`
-and `~/wiicompiled-frame/disc` back to the PC, send `out` to the Frame with Frame Control and copy
-the disc over as in [Install on the Frame](#3-install-on-the-frame).
-
-On some hosts, for example Unraid 7 with kernel 6.18, `binfmt_misc` registrations are per container.
-`tonistiigi/binfmt --install arm64` then reports success, but Debian answers `exec format error`.
-Register qemu on the host instead, with the `P` flag the tonistiigi build of qemu expects. Without it,
-every program loses its first argument, and `uname -m` prints `Linux`:
-
-```bash
-docker create --name qemu-src tonistiigi/binfmt
-docker cp qemu-src:/usr/bin/qemu-aarch64 /usr/local/bin/qemu-aarch64
-docker rm qemu-src
-echo ':qemu-aarch64:M::\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xb7\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/local/bin/qemu-aarch64:POCF' > /proc/sys/fs/binfmt_misc/register
-docker run --rm --platform linux/arm64 debian:trixie uname -m   # aarch64
-```
-
-Unraid keeps `/usr/local/bin` in memory, so repeat this after a reboot.
+Copying under a new name and moving it into place works even while the game is open.
 
 ## How it works
 
-- **Same-device rendering.** SteamVR's OpenXR runtime creates the Vulkan instance and device that
-  Dawn (Aurora's WebGPU layer) renders with, through Aurora's patches to Dawn
+- **One GPU device.** SteamVR's OpenXR runtime creates the Vulkan device that Dawn (the WebGPU
+  layer under Aurora, the game's renderer) draws with, through Aurora's patches to Dawn
   (`aurora-main/patches/dawn`). Each eye is copied into SteamVR's swapchain on Dawn's own queue, so
-  nothing is shared between GPU devices. This is the PC's Vulkan backend
-  (`runtime/src/vr/openxr_vulkan_win32.cpp`), compiled for Linux. Dawn links statically, so the
-  patched Dawn is built once (`Launcher/build-dawn-linux.sh`). Its `aurora-dawn.json` declares the
-  Vulkan hook and density map ABIs that Aurora compiles against.
-- **Headset only.** The game neither shows nor finishes rendering a desktop window, and is compiled
-  for the Frame's Cortex-X4 cores (`-mcpu=cortex-x4`, overridable with `--cpu`).
-- **Tuned for ARM64.** The Frame's kernel uses 4 KiB memory pages, so the `steam_frame` build drops
-  the page-size check from every translated memory access; it checks the page size once at startup
-  and refuses to start if it is ever different. Audio mixing uses NEON on ARM64.
-- **Every refresh from the game.** The game draws 60 frames a second. When it handed SteamVR only
-  those, SteamVR ran it at half rate and made up every other refresh itself, even with Motion
-  Smoothing off. With `[vr] repeat_frames`, the pacing thread waits for the next frame until 1.5 ms
-  before SteamVR's next wake, then resubmits the last frame at the pose it was rendered for.
-  SteamVR turns that to the current head pose.
-- **Eye-tracked foveation.** `XR_EXT_eye_gaze_interaction` gives the gaze, which
-  `runtime/include/vr/eye_gaze.h` turns into each eye's view. Aurora picks a fragment density map
-  centred on the gaze, snapped to cells of about 3 degrees (`aurora-main/lib/gfx/foveation.hpp`),
-  and keeps up to 128 per eye. Each map has a memory block of its own: Turnip reads a map through a
-  host mapping, and Dawn's buffer uploads unmap the shared blocks they sub-allocate from. That
-  crashed the game when a race restarted, until each map got its own block.
-- **120 Hz.** `[vr] refresh_rate` (default 120 on the Frame, `0` keeps the headset's own) is asked of
-  SteamVR through `XR_FB_display_refresh_rate`. SteamVR only offers the rate set in its own settings.
+  nothing has to be shared between devices. This is the PC's Vulkan backend
+  (`runtime/src/vr/openxr_vulkan_win32.cpp`) compiled for Linux. Dawn is linked in statically,
+  which is why the patched Dawn is built once on your machine (`Launcher/build-dawn-linux.sh`).
+- **Headset only.** The game draws no desktop window, and is compiled for the Frame's Cortex-X4
+  cores (`-mcpu=cortex-x4`).
+- **Tuned for ARM64.** The Frame's kernel uses 4 KiB memory pages, so the Steam Frame build skips
+  the page-size check on every translated memory access; it checks once at startup and refuses to
+  start if the size is ever different. Audio mixing uses NEON.
+- **Every refresh from the game.** The game draws 60 frames a second. Given only those, SteamVR
+  ran it at half rate and filled every other refresh itself, even with Motion Smoothing off. With
+  `[vr] repeat_frames`, the pacing thread waits for the next frame until 1.5 ms before SteamVR's
+  next wake, then submits the last frame again with the head pose it was drawn for, and SteamVR
+  turns it to the current pose.
+- **Eye-tracked foveation.** `XR_EXT_eye_gaze_interaction` gives the gaze, and Aurora picks a
+  fragment density map centred on it, snapped to cells of about 3 degrees
+  (`aurora-main/lib/gfx/foveation.hpp`), keeping up to 128 per eye. Each map has its own memory
+  block, since sharing blocks crashed the game when a race restarted.
+- **120 Hz.** `[vr] refresh_rate` (120 on the Frame by default, `0` keeps the headset's own) is
+  requested through `XR_FB_display_refresh_rate`. SteamVR only offers the rate set in its own
+  settings.
+- **The Android version.** The Quest app has a `steamFrame` flavour
+  (`android/Build-Quest.ps1 -Headset frame`) for the Frame's Android layer, Lepton. It starts in VR
+  there but shows no picture: the Android backend passes each eye between two GPU devices, and
+  Lepton's graphics driver supports none of the ways to share images between them. The native build
+  uses one device, which is why it is the one to play. [`docs/quest-port.md`](docs/quest-port.md)
+  covers the Android build.
 
-### The Android flavour
+[`OPENXR.md`](OPENXR.md) documents every VR setting and the renderer in full.
 
-The Quest app also has a `steamFrame` flavour (`android/Build-Quest.ps1 -Headset frame`), for the
-Frame's Android layer, Lepton. It builds and starts in VR there, but cannot show a picture. The
-Android backend hands each eye from Dawn's device to its own OpenXR device through
-`VK_ANDROID_external_memory_android_hardware_buffer` and sync fds, and Lepton's Turnip has neither,
-nor `VK_KHR_external_memory_fd`. The native build needs no sharing, which is why it is the one to
-play. [`docs/quest-port.md`](docs/quest-port.md) covers the Android build.
+## What comes from where
 
-## Reporting problems
+This fork keeps everything [WiiCompiled OpenXR VR](https://github.com/iChris4/Wiicompiled_VR) has:
+menus on a virtual screen and races in stereo, a first-person cockpit with a steering wheel you can
+grab and turn, the settings panel in the headset, and Retro Rewind as its own translated game. The
+physics are identical to the original game, proven by ghosts that sync across the Wii, Dolphin and
+WiiCompiled.
 
-Open an issue on this repository with:
-- what you did and what you saw (which eye, where in the picture, racing or menus);
-- the archive [`frame-diagnostics.sh`](#troubleshooting) makes, or at least the run's `console.log`
-  (and `crash_sigsegv.txt` after a crash) from `~/.local/share/WiiCompiled/Logs/` on the Frame;
-- or, for a build problem, the last lines of the failing step.
+On top of that it adds the SteamOS build, the install, update and diagnostics scripts and the
+Frame-specific rendering, and it carries fixes taken from WiiCompiled itself and from other forks:
+Linux TLS for online play, faster disc reads, safer settings saves, NEON audio mixing and more.
+[`CREDITS.md`](CREDITS.md) lists each with its author.
 
-Problems that also happen on a PC or a Quest belong upstream, in
-[WiiCompiled OpenXR VR](https://github.com/iChris4/Wiicompiled_VR).
-
-## From upstream
-
-The fork keeps everything [WiiCompiled OpenXR VR](https://github.com/iChris4/Wiicompiled_VR) does;
-its README covers it in full. On top of that it carries fixes taken from
-[WiiCompiled](https://github.com/patchzyy/Wiicompiled) itself and from other WiiCompiled forks, such
-as Linux TLS for online play, faster disc reads, safer settings saves and NEON audio mixing; each is
-listed with its author in [`CREDITS.md`](CREDITS.md). In the headset that means:
-
-- Menus and unsupported scenes on a head-locked virtual screen, and races in immersive stereo.
-- A first-person cockpit whose steering wheel or handlebar turns with your steering, and hand
-  steering by heurazy: grab the wheel with the tracked controllers and turn it.
-- The settings panel in the headset (render scale, foveation, refresh rate, controls), saved to
-  `Config.toml` on the spot.
-- Physics identical to the original game, proven by ghosts that sync across Wii, Dolphin and
-  WiiCompiled.
-- [Retro Rewind](https://wiki.tockdom.com/wiki/Retro_Rewind) as its own statically translated
-  profile.
-
-The PC (Windows D3D12 and Vulkan) and Meta Quest builds are still here and unchanged; see
-[`OPENXR.md`](OPENXR.md) and [`docs/quest-port.md`](docs/quest-port.md). For those, use upstream's
-[WheelWizard VR](https://github.com/iChris4/WheelWizard_VR/releases/latest) instead of this fork.
-
-## A note on related projects
+The PC (Windows) and Meta Quest builds are still in the source and unchanged; see
+[`OPENXR.md`](OPENXR.md) and [`docs/quest-port.md`](docs/quest-port.md). To play on those, use
+upstream's [WheelWizard VR](https://github.com/iChris4/WheelWizard_VR/releases/latest) rather than
+this fork.
 
 WiiCompiled, WiiCompiled OpenXR VR, Wheel Wizard, Retro Rewind and this fork are developed
-**independently**, each with its **own** rules. What applies here does not automatically apply
-there, and vice versa. Check each project's own CONTRIBUTING and README files.
+independently, each with its own rules. Check each project's own README and CONTRIBUTING files.
 
 ## FAQ
 
 **Is this an emulator?**
-No. Everything is compiled to native ARM64 code before you press play. At runtime nothing emulates
-a Wii CPU or GPU.
+No. Everything is compiled to native ARM64 code before you press play. Nothing emulates a Wii
+processor or GPU while you play.
 
-**Do you provide the game, or a ready-built binary?**
-No. Nothing in this repo contains Nintendo code or assets, and the translated game is never
-shipped: it is built from your own disc, a one-time cost on your machine.
+**Can I download a ready-built game?**
+No. The game is built from your own disc, and anything built from it can't be shared. The build
+is a one-time cost on your machine, and updates only rebuild what changed.
 
-**Which game version works?**
-Clean PAL `RMCP01`. Other regions and modified executables are **rejected**.
+**Which version of the game works?**
+Clean PAL `RMCP01` only. Other regions and modified discs are rejected.
 
-**Why not install the Quest APK on the Frame?**
-The Frame runs it in Lepton, whose graphics driver cannot share images between the two GPU devices
-the Android backend uses, so it shows nothing. The native build uses one device and needs no
-sharing.
+**Why not install the Quest app on the Frame?**
+The Frame runs Android apps in Lepton, whose graphics driver can't pass images between the two GPU
+devices the Android version uses, so it shows nothing. The native build uses one device.
 
-**Can it run on other SteamOS or Linux ARM64 devices?**
-Leave out `--headset steam_frame` and pass `--cpu` for your CPU to get a generic Linux VR build;
-it needs an OpenXR runtime with `XR_KHR_vulkan_enable2`. Untested. The generic build also works on
-kernels with memory pages larger than 4 KiB, which the `steam_frame` build refuses.
-
-## AI usage
-AI coding tools were used during development of this project. 
-All translated output is verified against real hardware behavior and most importantly, physics accuracy is proven synced across Wii, Dolphin, and WiiCompiled (see FAQ). 
+**Can it run on other Linux ARM64 devices?**
+Untested. Build by hand without `--headset steam_frame` and with `--cpu` for your processor to get a
+generic Linux VR build; it needs an OpenXR runtime with `XR_KHR_vulkan_enable2`. Unlike the Steam
+Frame build, it also works with memory pages larger than 4 KiB.
 
 ## Credits
 
 This fork stands on other people's work: WiiCompiled by patchzyy, WiiCompiled OpenXR VR by iChris4,
-and fixes ported from heurazy's Wiicompiled_VR-PLUS, Chris Sotraidis's KartPad, DarthMDev,
-BlackAndBlue95's Strikers-WiiCompiled, rooklz and nx-mod's wiicompiled-nx. [`CREDITS.md`](CREDITS.md)
-says what came from whom. In short:
+the steering wheel and hand steering by heurazy, and fixes from heurazy's Wiicompiled_VR-PLUS,
+Chris Sotraidis's KartPad, DarthMDev, BlackAndBlue95's Strikers-WiiCompiled, rooklz and nx-mod's
+wiicompiled-nx. [`CREDITS.md`](CREDITS.md) says what came from whom, along with the tools and
+references used: [aurora](https://github.com/encounter/aurora),
+[Dawn](https://dawn.googlesource.com/dawn), [OpenXR](https://www.khronos.org/openxr/),
+[Dolphin](https://github.com/dolphin-emu/dolphin), [DolphinXR](https://github.com/iChris4/dolphinXR),
+[nod](https://github.com/encounter/nod), [Retro Rewind](https://wiki.tockdom.com/wiki/Retro_Rewind),
+[Wheel Wizard](https://github.com/TeamWheelWizard/WheelWizard) and
+[Frame Control](https://github.com/saphid/frame-control). The logo is by Inkwreck.
 
-- **inkwreck** - making the logo
-- **[aurora](https://github.com/encounter/aurora)** - the GX rendering/windowing backend this
-  project's whole graphics layer sits on. MIT licensed.
-- **[Dawn](https://dawn.googlesource.com/dawn)** - Google's WebGPU implementation, powering
-  aurora's Direct3D, Vulkan and OpenGL backends.
-- **[OpenXR](https://www.khronos.org/openxr/)** - the Khronos cross-platform API used by the
-  experimental VR renderer.
-- **[WiiCompiled OpenXR VR](https://github.com/iChris4/Wiicompiled_VR)** by iChris4 and
-  **[WiiCompiled](https://github.com/patchzyy/Wiicompiled)** by patchzyy - the projects this fork
-  is built on.
-- **heurazy** - the VR cockpit's turning steering wheel and hand steering, ported from
-  **[mario-kart-wii-VR-port](https://github.com/heurazy/mario-kart-wii-VR-port)** (GPL-3.0).
-- **[Dolphin Emulator](https://github.com/dolphin-emu/dolphin)** - an invaluable reference for Wii
-  hardware behavior during development, plus the source of the free DSP coefficient ROM and the
-  unmodified default WiiConnect24 bootstrap tree bundled with the runtime.
-- **[Retro Rewind](https://wiki.tockdom.com/wiki/Retro_Rewind)** by ZPL and team - the mod
-  distribution this project supports.
-- **[Wheel Wizard](https://github.com/TeamWheelWizard/WheelWizard)** - the mod manager this
-  project integrates with as a launch backend.
-- **[nod](https://github.com/encounter/nod)** - nodtool, the disc image extractor.
-- **[DolphinXR](https://github.com/iChris4/dolphinXR)** - the OpenXR Wii Remote input design, and
-  the Steam Frame controller profile's input paths.
-- **[Frame Control](https://github.com/saphid/frame-control)** by saphid - installing the game into
-  the Frame's Steam library, and its notes on how the Frame's software fits together.
-- Everyone in the static recompilation community.
-
-Bundled third-party components and their licenses live in
+Bundled third-party components and their licenses are in
 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
 
+## AI usage
+
+AI coding tools were used to develop WiiCompiled and this fork. Translated output is checked
+against real hardware behaviour, and physics accuracy is proven by ghosts that sync across the Wii,
+Dolphin and WiiCompiled.
 
 ## License
 

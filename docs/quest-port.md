@@ -823,7 +823,7 @@ Android facts this design rests on, all measured on a Quest 3:
   application ID and storage, but select the appropriate CPU baseline (one
   `headsetCpus` map in `app/build.gradle.kts`), manifest and launcher
   behavior. `steamFrame` is Valve's Steam Frame under Lepton, SteamOS's
-  Android layer, where it cannot show a picture; see the README, The Android flavour.
+  Android layer, where it cannot show a picture; see the README, How it works.
   `app/src/main/cpp/CMakeLists.txt` adds the repository's `runtime/` as a
   subdirectory with those Android choices and builds both game kit probes
   (the Retro Rewind one only when the translation includes the mod), which
@@ -852,7 +852,7 @@ powershell -ExecutionPolicy Bypass -File android/Build-Quest.ps1 -Headset quest1
 powershell -ExecutionPolicy Bypass -File android/Build-QuestGame.ps1 -Install         # your game, against that kit, into Import (or WheelWizard VR's Build for Quest)
 powershell -ExecutionPolicy Bypass -File android/Build-QuestGame.ps1 -Product retro_rewind -Mod <RetroRewind6> -Install  # the mod and its pack (needs translate-mod output with --retro-wfc-payload)
 powershell -ExecutionPolicy Bypass -File android/Build-QuestGame.ps1 -Headset quest1 -Install  # game package from the Quest 1 kit
-powershell -ExecutionPolicy Bypass -File android/Build-Quest.ps1 -Headset frame       # Steam Frame flavour (README, The Android flavour)
+powershell -ExecutionPolicy Bypass -File android/Build-Quest.ps1 -Headset frame       # Steam Frame flavour (README, How it works)
 adb push MarioKart.iso /sdcard/Download/                                               # then Select disc image in the launcher
 ```
 
