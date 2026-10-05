@@ -313,13 +313,19 @@ newest=${run_dirs[0]:-}
     echo "game: $([[ -x "$game_dir/WiiCompiled" ]] && echo "installed in $game_dir" || echo "NOT FOUND in $game_dir")"
     echo "disc: $(head -n 1 "$root/game/disc.txt" | sed 's/^dvd_root: //')$(grep -q MISSING "$root/game/disc.txt" && echo '  (PROBLEM: see game/disc.txt)')"
     echo "SteamVR running: $(pgrep -x vrserver >/dev/null 2>&1 && echo yes || echo no)"
+    echo "game running: $(pgrep -x WiiCompiled >/dev/null 2>&1 && echo "yes (the newest run's log is still being written)" || echo no)"
     echo
     if [[ -z "$newest" ]]; then
         echo "No run folders in $logs_dir: the game has not started on this Frame (or logs elsewhere)."
     else
         console=$newest/console.log
         echo "newest run: ${newest##*/} ($(stat -c %y "$newest" 2>/dev/null | cut -d. -f1))"
-        echo "version: $(head -n 1 "$console" 2>/dev/null | sed 's/^\[runtime\] //')"
+        version=$(head -n 1 "$console" 2>/dev/null | sed 's/^\[runtime\] //')
+        # Builds without a build-fingerprint.json beside the executable log no version; its date
+        # still tells builds apart.
+        [[ "$version" == *"version unknown"* && -f "$game_dir/WiiCompiled" ]] &&
+            version="$version (executable built $(stat -c %y "$game_dir/WiiCompiled" | cut -d. -f1))"
+        echo "version: $version"
         echo
         echo "startup steps (README, Troubleshooting); the first one missing is where it stopped:"
         while IFS='|' read -r label pattern; do
@@ -348,7 +354,8 @@ STEPS
         echo "--- end of console.log ---"
         echo
         echo "--- last frame-pacing lines ([diagnostics] openxr_logging = true) ---"
-        grep -h 'xr-diag\] 1.0' "$console" 2>/dev/null | tail -n 5 || true
+        pacing=$(grep -h 'xr-diag\] 1.0' "$console" 2>/dev/null | tail -n 5)
+        echo "${pacing:-(none: this run had openxr_logging off)}"
         for f in "$newest"/crash_*.txt; do
             [[ -f "$f" ]] || continue
             echo
