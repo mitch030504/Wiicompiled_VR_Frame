@@ -287,7 +287,7 @@ The Steam Frame's controllers get their own profile where the runtime offers it
 (`XR_VALVE_frame_controller_interaction`, `/interaction_profiles/valve/frame_controller_valve`):
 right A, B, trigger and stick as above, left View as the left menu (+), the left shoulder as left Y
 (the settings panel), and the left D-pad as the Wii Remote's D-pad (the gamepad's D-pad in
-`"gamepad"` mode). The table is in `docs/steam-frame.md`.
+`"gamepad"` mode). The table is in the README, Controls.
 
 **Motion.** Each XR frame the aim and grip poses are located at the measured current time
 (`XR_KHR_win32_convert_performance_counter_time`, `XR_KHR_convert_timespec_time` on Android), not
@@ -1097,8 +1097,8 @@ turned into tangents of each eye's view (`vr/eye_gaze.h`), which `AuroraStereoFr
 and error of tracking, on the gaze snapped to a cell of two map texels (about 3 degrees), keeping up
 to 128 maps per eye, one per cell looked at, and binds a new one once
 its upload completes, the previous map staying bound meanwhile. Without a tracked gaze (a blink, no
-tracker, the setting off) the map is the forward one above, unchanged. Details and the Steam Frame
-checks are in `docs/steam-frame.md`.
+tracker, the setting off) the map is the forward one above, unchanged. The README's How it works
+covers the Steam Frame.
 
 ## Diagnostics
 
@@ -1282,8 +1282,8 @@ custom DLL's ABI through three borrowed-image copy/readback cycles; run it with 
 | Windows D3D12 | Implemented: same-adapter, same-device asynchronous OpenXR submission. |
 | Windows Vulkan | Implemented, opt-in (`video.graphics_api = "vulkan"`): the runtime creates Dawn's Vulkan instance and device through `XR_KHR_vulkan_enable2`, eyes are copied on the same queue, and Dawn's device guard is held around the four queue-touching OpenXR calls. Needs the custom Dawn from `Launcher/Build-DawnVulkan.ps1`. Raced on SteamVR/PSVR2 at the headset's full rate; other runtimes unexercised. See [Windows Vulkan](#windows-vulkan). |
 | Android Vulkan (Meta Quest) | Implemented and running on a Quest 3: the OpenXR side owns its own Vulkan device (`XR_KHR_vulkan_enable2`, `XR_KHR_vulkan_enable` fallback) and shares eyes with Dawn through `AHardwareBuffer`s ordered by sync-fd fences. Controllers arrive through OpenXR actions as a virtual SDL gamepad. See `docs/quest-port.md`. |
-| Android Vulkan (Steam Frame) | The same backend in the `steamFrame` flavour, for SteamVR's Android runtime under Lepton: Frame controller profile, 120 Hz request, eye-tracked foveation. Blocked on the headset: Lepton's Turnip exposes no AHardwareBuffer or fd external memory, so the eyes cannot cross devices. The native build below is the supported route. See `docs/steam-frame.md`. |
-| Linux Vulkan (Steam Frame, SteamOS) | Implemented, not yet run on the headset: the Windows Vulkan design compiled for Linux, so the runtime creates Dawn's own instance and device and the eyes are copied on Dawn's queue with no sharing. Adds the Frame controller profile, 120 Hz and gaze-centred foveation. Needs a Dawn built with Aurora's patches (`Launcher/build-dawn-linux.sh`), then `Launcher/local-build.sh --openxr --dawn-package <dir> --headset steam_frame`. See `docs/steam-frame.md`. |
+| Android Vulkan (Steam Frame) | The same backend in the `steamFrame` flavour, for SteamVR's Android runtime under Lepton: Frame controller profile, 120 Hz request, eye-tracked foveation. Blocked on the headset: Lepton's Turnip exposes no AHardwareBuffer or fd external memory, so the eyes cannot cross devices. The native build below is the supported route. See the README, The Android flavour. |
+| Linux Vulkan (Steam Frame, SteamOS) | Implemented and played on a Steam Frame (beta): the Windows Vulkan design compiled for Linux, so the runtime creates Dawn's own instance and device and the eyes are copied on Dawn's queue with no sharing. Adds the Frame controller profile, 120 Hz and gaze-centred foveation. Needs a Dawn built with Aurora's patches (`Launcher/build-dawn-linux.sh`), then `Launcher/local-build.sh --openxr --dawn-package <dir> --headset steam_frame`. See the README, Quick start. |
 | Other platforms | Not wired yet. |
 
 Both bindings share `openxr_integration.cpp`: the pacing thread, policy evaluation, the

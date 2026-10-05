@@ -3,7 +3,7 @@
 # Vulkan hooks through which the OpenXR runtime creates Dawn's own instance and device (the
 # same-device OpenXR backend, runtime/src/vr/openxr_vulkan_win32.cpp) and fragment density maps for
 # foveated rendering. The stock prebuilt package has neither. This is the Linux counterpart of
-# android/Build-QuestDawn.ps1, for the Steam Frame's native SteamOS build (docs/steam-frame.md).
+# android/Build-QuestDawn.ps1, for the Steam Frame's native SteamOS build (README.md, Quick start).
 #
 #   Launcher/build-dawn-linux.sh [--work-dir DIR] [--cc PATH --cxx PATH] [--cmake PATH]
 #                                [--ninja PATH] [--python PATH] [--jobs N] [--force]
