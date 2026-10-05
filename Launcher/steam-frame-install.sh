@@ -160,6 +160,22 @@ fi
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || fail "--jobs must be a positive number"
 note "$jobs parallel compiles"
 
+# Room for the build. A first one (the toolchain, Dawn's source and build, the game's build) takes
+# about 20 GB; later ones reuse Dawn. Extracting a disc image takes about 5 GB more, plus the
+# archive's size while one is unpacked. Running out halfway is worse than stopping here.
+need_gb=20
+[[ -f "$work_dir/dawn/package/aurora-dawn.json" ]] && need_gb=5
+if [[ -n "$disc" && -f "$disc" && ! -f "$work_dir/disc/sys/main.dol" ]]; then
+    need_gb=$(( need_gb + 5 + $(du -k "$disc" | cut -f1) / 1024 / 1024 ))
+fi
+free_gb=$(( $(df -Pk "$work_dir" | awk 'NR == 2 { print $4 }') / 1024 / 1024 ))
+if (( free_gb < need_gb )); then
+    fail "$work_dir has $free_gb GB free; this run needs about $need_gb GB. Free some space, or put
+    the work folder on a bigger drive with --work-dir (on the Frame, a mounted card such as
+    --work-dir /run/media/${USER:-$(id -un)}/<card>/wiicompiled-frame)."
+fi
+note "$free_gb GB free in $work_dir"
+
 # ---------------------------------------------------------------------------------------------
 # The source: the tree this script is in, an explicit --source, or a release kept in the work dir.
 if [[ -z "$source_dir" && -z "$release" && -n "$script_dir" && -f "$script_dir/../runtime/CMakeLists.txt" ]]; then
@@ -474,11 +490,20 @@ EOF
 )
 if [[ "$has_disc" != yes ]]; then
     [[ -n "$disc_dir" ]] || fail "the Frame has no disc at $frame_disc yet: pass --disc"
-    on_frame "$frame_disc_path" <<'EOF' || fail "cannot write $frame_disc on the Frame. SteamOS's system is read-only:
-    pick a folder in the home folder (the default, wiicompiled/disc) or on a mounted card."
+    # The folder must be writable, and have room for the disc (prints its free space in KB).
+    frame_free_kb=$(on_frame "$frame_disc_path" <<'EOF'
 [[ "$1" = /* ]] && d=$1 || d="$HOME/$1"
-mkdir -p "$(dirname "$d")" 2>/dev/null && [[ -w "$(dirname "$d")" ]] && rm -rf "$d.partial"
+mkdir -p "$(dirname "$d")" 2>/dev/null && [[ -w "$(dirname "$d")" ]] && rm -rf "$d.partial" &&
+    df -Pk "$(dirname "$d")" | awk 'NR == 2 { print $4 }'
 EOF
+    ) || fail "cannot write $frame_disc on the Frame. SteamOS's system is read-only: pick a folder in
+    the home folder (the default, wiicompiled/disc) or on a mounted card."
+    disc_kb=$(du -sk "$disc_dir" | cut -f1)
+    if (( frame_free_kb < disc_kb + 1024 * 1024 )); then
+        fail "the Frame has $(( frame_free_kb / 1024 / 1024 )) GB free where the disc goes and the disc
+    needs $(( disc_kb / 1024 / 1024 + 1 )) GB. Free some space, or put it on a mounted card with
+    --frame-disc /run/media/<user>/<card>/wiicompiled-disc."
+    fi
     note "copying the extracted disc to $frame_disc (a few GB)"
     copy_to_frame "$disc_dir" "$frame_disc_path.partial"
     on_frame "$frame_disc_path" <<'EOF'

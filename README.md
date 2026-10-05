@@ -82,7 +82,8 @@ curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/op
   [Frame Control](https://github.com/saphid/frame-control), pass `--frame frame` instead: its SSH
   key answers to that name.
 - Everything it builds lives in `~/wiicompiled-frame` (`--work-dir` to change that): the toolchain,
-  Dawn, the source, the extracted disc and the build log, `build.log`.
+  Dawn, the source, the extracted disc and the build log, `build.log`. A first build needs about
+  20 GB there, and the script checks for it before starting.
 - It runs as many compiles at once as fit in memory (a quarter of your memory in GB). If the machine
   still freezes, run it again with a lower `--jobs`, such as `--jobs 2`.
 - If it stops for any reason, the same command picks up where it left off.
@@ -100,7 +101,7 @@ Everything it puts on the Frame is in your home folder, where it survives SteamO
 | Where | What |
 | --- | --- |
 | `~/devkit-game/WiiCompiled/` | the game |
-| `~/wiicompiled/disc/` | your extracted disc (`--frame-disc` puts it elsewhere in your home folder or on a mounted card) |
+| `~/wiicompiled/disc/` | your extracted disc, about 4.5 GB (`--frame-disc` puts it elsewhere in your home folder or on the SD card, `/run/media/steamos/<card>/...`) |
 | `~/.local/share/WiiCompiled/` | `Config.toml`, saves and logs, written by the game itself |
 | Steam's library | the **WiiCompiled** shortcut, made through Valve's devkit tools in `~/devkit-utils` |
 
@@ -312,21 +313,26 @@ is open.
 
 ## Other ways to build
 
-**On the Frame itself.** This needs podman, which has to come with SteamOS: its system is read-only,
-and anything installed into it with `pacman` (after switching the read-only mode off) is gone at the
-next update, so don't. The script checks and says so if it is missing; then build on a PC as above.
-If it is there, run the script over SSH (`ssh steamos@<frame-ip>`) or in a Desktop Mode terminal:
+**On the Frame itself.** SteamOS on the Frame (0.4.3, September 2026) comes with podman 5.5, set
+up for rootless containers with its storage in the home folder, so the install script runs there
+natively, with no emulation and nothing installed into the read-only system. Don't add tools to
+SteamOS with `pacman`: that means switching the read-only mode off, and the next update undoes it.
+The script checks for podman and stops with a pointer to building on a PC if an image lacks it.
+
+The first build needs about 20 GB in its work folder, and podman's storage
+(`~/.local/share/containers`) grows by about 1.5 GB for the build container. If the home folder is
+short of that (the script checks), put the work folder on the SD card, which SteamOS mounts under
+`/run/media/<user>/<card>` (on the Frame the user is `steamos`). Over SSH
+(`ssh steamos@<frame-ip>`) or in a Desktop Mode terminal:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/openxr-work/Launcher/steam-frame-install.sh \
-    | bash -s -- --disc "/path/to/Mario Kart Wii.wbfs" --frame local
+    | bash -s -- --disc "/path/to/Mario Kart Wii.wbfs" --frame local --work-dir /run/media/steamos/<card>/wiicompiled-frame
 ```
 
-It is native ARM64, so no emulation, but the Frame has less memory and cooling than a PC; keep it
-on its charger. Everything stays in your home folder: the container image and its packages in
-podman's storage (`~/.local/share/containers`), the toolchain, Dawn and the build in
-`~/wiicompiled-frame` (about 20 GB), and the game reads the disc straight from
-`~/wiicompiled-frame/disc`. By hand, the
+Leave out `--work-dir` to keep it in `~/wiicompiled-frame`. With 15 GB of memory the Frame runs three
+compiles at once; it has less cooling than a PC, so keep it on its charger. The game then reads the
+disc straight from the work folder's `disc`. By hand, the
 steps under [Building by hand](#building-by-hand) work the same in a container started without
 `--platform linux/arm64`, with `nodtool-linux-aarch64` in place of `nodtool-linux-x86_64`.
 
