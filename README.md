@@ -41,7 +41,8 @@ of it compiling Dawn under emulation; later builds reuse it.
 **You need:**
 - a Steam Frame with Developer Mode on (Steam Settings → System → Enable Developer Mode, then set a
   user password), on the same network as your PC;
-- your own clean PAL `RMCP01` disc image of Mario Kart Wii (ISO, WBFS, RVZ, ...);
+- your own clean PAL `RMCP01` disc of Mario Kart Wii: an ISO, WBFS or RVZ image (WIA, CISO, GCZ
+  and NFS work too), or a folder you extracted it to;
 - an x86_64 Linux PC with about 20 GB free and 16 GB of memory or more.
 
 The PC commands below work in bash, zsh and fish.
@@ -73,6 +74,9 @@ curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/op
     | bash -s -- --disc "/path/to/Mario Kart Wii.wbfs" --frame steamos@<frame-ip>
 ```
 
+- `--disc` takes the image whatever its name or extension; the format is read from the file
+  itself. It checks the game ID before building and stops on any disc other than PAL `RMCP01`.
+  A `.zip` or `.7z` has to be unpacked first.
 - It asks for the Frame's password when it gets there. If you use
   [Frame Control](https://github.com/saphid/frame-control), pass `--frame frame` instead: its SSH
   key answers to that name.

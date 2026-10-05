@@ -14,8 +14,9 @@
 # hours there, mostly compiling Dawn, and later ones reuse it.
 #
 # Options:
-#   --disc PATH       your clean PAL RMCP01 disc: an image nodtool reads (ISO, WBFS, RVZ, ...) or an
-#                     extracted disc folder holding sys/ and files/. Needed for the first build only.
+#   --disc PATH       your clean PAL RMCP01 disc: an ISO, WBFS or RVZ image (or WIA, CISO, GCZ, NFS,
+#                     TGC), or an extracted disc folder holding sys/ and files/. Needed for the first
+#                     build only.
 #   --frame HOST      where to install: an SSH destination (steamos@<frame-ip>, or an ~/.ssh/config
 #                     host such as Frame Control's "frame"), or "local" when running on the Frame.
 #                     Without it the game is only built.
@@ -184,22 +185,54 @@ fi
 
 # ---------------------------------------------------------------------------------------------
 # The disc: the two files the translation reads, and the extracted disc the game reads at run time.
+check_disc_id() {
+    # Fails unless the extracted disc in $1 is the release the translation is made for.
+    local id
+    if [[ ! -f "$1/sys/boot.bin" ]]; then
+        note "could not check the disc's game ID: $1/sys/boot.bin is missing"
+        return 0
+    fi
+    id=$(head -c 6 "$1/sys/boot.bin" | tr -dc 'A-Z0-9')
+    [[ "$id" == RMCP01 ]] && return 0
+    # An extraction of the wrong disc is not kept, so the next run extracts the one it is given.
+    [[ "$1" == "$work_dir/disc" ]] && rm -rf "$1"
+    case "$id" in
+        RMC?01) fail "this is the $id release of Mario Kart Wii. The translation is made for the PAL
+    release, RMCP01; other regions' code differs and is not supported." ;;
+        *) fail "this disc's game ID is ${id:-unreadable}, not Mario Kart Wii PAL (RMCP01)" ;;
+    esac
+}
+
 disc_dir="$work_dir/disc"
 if [[ -n "$disc" ]]; then
     [[ -e "$disc" ]] || fail "no disc at $disc"
     if [[ -d "$disc" ]]; then
         disc_dir=$(cd "$disc" && pwd)
+        # Some tools put the game's partition in a subfolder (DATA/, for example).
+        if [[ ! -f "$disc_dir/sys/main.dol" ]]; then
+            for candidate in "$disc_dir"/*/; do
+                if [[ -f "$candidate/sys/main.dol" && -f "$candidate/files/rel/StaticR.rel" ]]; then
+                    disc_dir=${candidate%/}
+                    break
+                fi
+            done
+        fi
+        [[ -f "$disc_dir/sys/main.dol" && -f "$disc_dir/files/rel/StaticR.rel" ]] ||
+            fail "$disc is not an extracted disc: it needs sys/main.dol and files/rel/StaticR.rel"
     elif [[ ! -f "$disc_dir/sys/main.dol" ]]; then
-        say "Extracting your disc"
+        say "Extracting your disc (a minute or two)"
         nodtool="$work_dir/nodtool-$nodtool_version"
         if [[ ! -x "$nodtool" ]]; then
-            curl -fL -o "$nodtool.partial" \
+            curl -fL --progress-bar -o "$nodtool.partial" \
                 "https://github.com/encounter/nod/releases/download/$nodtool_version/nodtool-linux-$host_arch"
             chmod +x "$nodtool.partial"
             mv "$nodtool.partial" "$nodtool"
         fi
         rm -rf "$disc_dir.partial"
-        "$nodtool" extract "$disc" "$disc_dir.partial"
+        # nodtool tells the format from the file's contents, whatever it is named.
+        "$nodtool" extract -q "$disc" "$disc_dir.partial" ||
+            fail "nodtool could not read $disc. It reads ISO, WBFS, RVZ, WIA, CISO, GCZ, NFS and TGC
+    images; unpack a .zip or .7z first."
         mv "$disc_dir.partial" "$disc_dir"
     fi
 fi
@@ -209,6 +242,10 @@ if [[ ! -f "$disc_dir/sys/main.dol" || ! -f "$disc_dir/files/rel/StaticR.rel" ]]
     else
         fail "no disc yet: pass --disc with your disc image or an extracted disc folder"
     fi
+fi
+if [[ -n "$disc_dir" ]]; then
+    check_disc_id "$disc_dir"
+    note "disc: $disc_dir"
 fi
 mkdir -p "$source_dir/Assets"
 if [[ -n "$disc_dir" ]]; then
