@@ -48,7 +48,7 @@ std::optional<std::filesystem::path> ExecutableDirectory() noexcept {
     return (ec ? std::filesystem::path(path) : resolved).parent_path();
 #elif defined(__ANDROID__)
     // Bundled read-only runtime resources (wii_bootstrap/, dsp_coef.bin,
-    // initial_pipeline_cache.db) unpacked from the APK by the activity. Stands
+    // initial_pipeline_cache.db, cacert.pem) unpacked from the APK by the activity. Stands
     // in for the executable directory the desktop builds look next to.
     if (const char* resources = std::getenv("MKW_ANDROID_RESOURCES_DIR"); resources && *resources) {
         return std::filesystem::path(resources);
