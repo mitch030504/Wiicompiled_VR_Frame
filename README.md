@@ -43,7 +43,7 @@ of it compiling Dawn under emulation; later builds reuse it.
   user password), on the same network as your PC;
 - your own clean PAL `RMCP01` disc of Mario Kart Wii: an ISO, WBFS or RVZ image (WIA, CISO, GCZ
   and NFS work too), as is or in a `.zip` or `.7z`, or a folder you extracted it to;
-- an x86_64 Linux PC with about 20 GB free and 16 GB of memory or more.
+- an x86_64 Linux PC with about 15 GB free and 16 GB of memory or more.
 
 The PC commands below work in bash, zsh and fish.
 
@@ -83,7 +83,7 @@ curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/op
   key answers to that name.
 - Everything it builds lives in `~/wiicompiled-frame` (`--work-dir` to change that): the toolchain,
   Dawn, the source, the extracted disc and the build log, `build.log`. A first build needs about
-  20 GB there, and the script checks for it before starting.
+  10 GB there, plus about 5 GB for your extracted disc; the script checks before starting.
 - It runs as many compiles at once as fit in memory (a quarter of your memory in GB). If the machine
   still freezes, run it again with a lower `--jobs`, such as `--jobs 2`.
 - If it stops for any reason, the same command picks up where it left off.

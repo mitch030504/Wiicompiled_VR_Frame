@@ -26,7 +26,7 @@
 #                     host such as Frame Control's "frame"), or "local" when running on the Frame.
 #                     Without it the game is only built.
 #   --work-dir DIR    where the toolchain, Dawn, the build and the extracted disc live
-#                     (default ~/wiicompiled-frame; about 20 GB)
+#                     (default ~/wiicompiled-frame; about 10 GB, plus 5 for an extracted disc)
 #   --release TAG     the release to build (default: the newest one). Ignored with --source.
 #   --source DIR      build this source tree instead of a release (default when the script runs
 #                     from inside one)
@@ -165,10 +165,10 @@ fi
 note "$jobs parallel compiles"
 
 # Room for the build. A first one (the toolchain, Dawn's source and build, the game's build) takes
-# about 20 GB; later ones reuse Dawn. Extracting a disc image takes about 5 GB more, plus the
+# about 10 GB (measured on a Frame: 8.3 GB with the disc); later ones reuse Dawn. Extracting a disc image takes about 5 GB more, plus the
 # archive's size while one is unpacked. Running out halfway is worse than stopping here.
-need_gb=20
-[[ -f "$work_dir/dawn/package/aurora-dawn.json" ]] && need_gb=5
+need_gb=10
+[[ -f "$work_dir/dawn/package/aurora-dawn.json" ]] && need_gb=3
 if [[ -n "$disc" && -f "$disc" && ! -f "$work_dir/disc/sys/main.dol" ]]; then
     need_gb=$(( need_gb + 5 + $(du -k "$disc" | cut -f1) / 1024 / 1024 ))
 fi
