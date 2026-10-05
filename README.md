@@ -31,11 +31,12 @@ C++ and compiled for the Frame's ARM64 CPU, and it renders through SteamVR's Ope
 
 ## Quick start
 
-This is the whole way from a [release](https://github.com/mitch030504/Wiicompiled_VR_Frame/releases)
-and your disc to playing in the headset, building on an x86_64 Linux PC. Releases are source only:
-the game is always built from your own disc, so there is nothing ready-built to download. The
-first build takes a few hours, most of it compiling Dawn under emulation; later builds reuse it.
-[Other ways to build](#other-ways-to-build) covers a faster machine and the Frame itself.
+This is the whole way from your disc to playing in the headset. An install script does the work: it
+downloads the newest [release](https://github.com/mitch030504/Wiicompiled_VR_Frame/releases),
+extracts your disc, builds the game in an ARM64 container on your PC, copies it and the disc to the
+Frame, and adds it to your Steam library. Releases are source only: the game is always built from
+your own disc, so there is nothing ready-built to download. The first build takes a few hours, most
+of it compiling Dawn under emulation; later builds reuse it.
 
 **You need:**
 - a Steam Frame with Developer Mode on (Steam Settings → System → Enable Developer Mode, then set a
@@ -61,109 +62,43 @@ podman run --rm --platform linux/arm64 docker.io/library/debian:trixie uname -m
 The last command must print `aarch64`. On Debian or Ubuntu install `podman qemu-user-static
 binfmt-support` instead. If podman complains about subordinate ids, run
 `sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 $USER` and log in again.
+Docker works too, in place of podman.
 
-### 2. Download the release and extract your disc
+### 2. Run the installer
 
-Take the newest release from the [Releases](https://github.com/mitch030504/Wiicompiled_VR_Frame/releases)
-page; the commands use `frame-beta-1`, so put the newest release's tag in its place:
-
-```bash
-mkdir -p ~/wiicompiled/Wiicompiled_VR_Frame; cd ~/wiicompiled
-curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-1.tar.gz \
-    | tar -xz --strip-components=1 -C Wiicompiled_VR_Frame
-curl -fL -o nodtool https://github.com/encounter/nod/releases/download/v2.0.0-alpha.10/nodtool-linux-x86_64
-chmod +x nodtool
-./nodtool extract "/path/to/Mario Kart Wii.wbfs" disc-extract
-mkdir -p Wiicompiled_VR_Frame/Assets
-cp disc-extract/sys/main.dol disc-extract/files/rel/StaticR.rel Wiicompiled_VR_Frame/Assets/
-```
-
-`disc-extract` must hold `sys/` and `files/` directly; keep it, the game reads it when it runs.
-
-### 3. Build, inside an ARM64 container
+With the path to your disc image and your Frame's address:
 
 ```bash
-podman run -it --name wiicompiled-frame --platform linux/arm64 -v ~/wiicompiled:/work docker.io/library/debian:trixie bash
+curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/openxr-work/Launcher/steam-frame-install.sh \
+    | bash -s -- --disc "/path/to/Mario Kart Wii.wbfs" --frame steamos@<frame-ip>
 ```
 
-Then, in the container's bash prompt:
+- It asks for the Frame's password when it gets there. If you use
+  [Frame Control](https://github.com/saphid/frame-control), pass `--frame frame` instead: its SSH
+  key answers to that name.
+- Everything it builds lives in `~/wiicompiled-frame` (`--work-dir` to change that): the toolchain,
+  Dawn, the source, the extracted disc and the build log, `build.log`.
+- It runs as many compiles at once as fit in memory (a quarter of your memory in GB). If the machine
+  still freezes, run it again with a lower `--jobs`, such as `--jobs 2`.
+- If it stops for any reason, the same command picks up where it left off.
+- On the Frame, the game goes to `~/devkit-game/WiiCompiled/` and the disc to `~/wiicompiled/disc`.
+  It is added to your Steam library through Valve's devkit tools in `~/devkit-utils`, which Frame
+  Control and Valve's Devkit Client put there. Without them, the script says how to add it once
+  yourself. Steam must be running on the Frame for this step.
+- `--help` lists every option. From a downloaded release, run `Launcher/steam-frame-install.sh`
+  with the same options: it then builds that release's source.
 
-```bash
-apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl git python3 xz-utils unzip file pkg-config g++ binutils libicu-dev zlib1g-dev \
-    libvulkan-dev libx11-dev libx11-xcb-dev libxcb1-dev libxext-dev libxrandr-dev libxinerama-dev \
-    libxcursor-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols \
-    libdecor-0-dev libegl-dev libgl-dev libgles-dev libdrm-dev libgbm-dev libasound2-dev libpulse-dev \
-    libpipewire-0.3-dev libudev-dev libdbus-1-dev libusb-1.0-0-dev
-cd /work/Wiicompiled_VR_Frame
-Launcher/prepare-portable-tools.sh --arch aarch64 --destination /work/tools   # clang 22, CMake, Ninja
-T=/work/tools/toolchain-aarch64/bin
-curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 8.0 --install-dir /work/dotnet
-Launcher/build-dawn-linux.sh --work-dir /work/dawn --cc $T/clang --cxx $T/clang++ \
-    --cmake $T/cmake --ninja $T/ninja --jobs 4 2>&1 | tee -a /work/dawn.log
-Launcher/local-build.sh --output-dir /work/out --cc $T/clang --cxx $T/clang++ --fuse-ld lld \
-    --cmake $T/cmake --ninja $T/ninja --dotnet /work/dotnet/dotnet --parallel 4 \
-    --openxr --dawn-package /work/dawn/package --headset steam_frame 2>&1 | tee -a /work/game.log
-exit
-```
-
-- Dawn is done when it prints `Patched Dawn for Linux ready`, the game when it prints
-  `MKWCBUILD:OUTPUT=/work/out`.
-- `--jobs 4` and `--parallel 4` suit 16 GB of memory. Compiles take more memory under emulation, and
-  16 at once froze a 16 GB laptop. Use 8 with 32 GB.
-- If it stops, `podman start -ai wiicompiled-frame` gets you back in. Run `cd /work/Wiicompiled_VR_Frame;
-  T=/work/tools/toolchain-aarch64/bin`, then the step that stopped: both scripts resume.
-
-### 4. Install on the Frame
-
-The easiest way is [Frame Control](https://github.com/saphid/frame-control): set up its connection
-to the Frame, then drag `~/wiicompiled/out` onto **Send to Frame**. Name it `WiiCompiled` and keep
-**Launches** on `WiiCompiled`. It adds the game to your Steam library, in `~/devkit-game/WiiCompiled/`
-on the Frame.
-
-Then copy the disc over and, on a first install, tell the game where it is (Frame Control's SSH
-key answers to `frame`; use `steamos@<frame-ip>` otherwise):
-
-```bash
-ssh frame mkdir -p wiicompiled
-scp -r ~/wiicompiled/disc-extract frame:wiicompiled/disc
-ssh frame 'mkdir -p ~/.local/share/WiiCompiled && printf "[paths]\ndvd_root = \"/home/steamos/wiicompiled/disc\"\n" > ~/.local/share/WiiCompiled/Config.toml'
-```
-
-Without Frame Control, `scp -r ~/wiicompiled/out frame:wiicompiled/` and start
-`~/wiicompiled/out/WiiCompiled` from a terminal in the Frame's Desktop Mode, with SteamVR running.
-
-### 5. Play
+### 3. Play
 
 Start **WiiCompiled** from the library in the headset. Open the settings panel with the left
 shoulder button, go to the **VR** tab and set the [recommended settings](#recommended-settings).
 
 ### Updating
 
-When a new release comes out, put its changed files over the old source, rebuild, and replace only
-the executable. `rsync -c` copies just the files whose content changed and stamps them with the
-current time, so the build recompiles exactly those. Unpacking over the source would restore each
-file's commit date, which can be older than the last build, and changes would be skipped. Your
-`Assets/` and build folders stay. Install `rsync` if your system lacks it, and put the new release's
-tag in place of `frame-beta-2`:
-
-```bash
-cd ~/wiicompiled
-mkdir -p release-new
-curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-2.tar.gz \
-    | tar -xz --strip-components=1 -C release-new
-rsync -rcE release-new/ Wiicompiled_VR_Frame/
-rm -rf release-new
-podman start -ai wiicompiled-frame
-# in the container: cd /work/Wiicompiled_VR_Frame; T=/work/tools/toolchain-aarch64/bin, then the
-# build-dawn-linux.sh and local-build.sh lines from step 3, then exit. Dawn only rebuilds when the
-# release changed its patches (the release notes say so); otherwise both finish quickly.
-scp ~/wiicompiled/out/WiiCompiled frame:devkit-game/WiiCompiled/WiiCompiled.new
-ssh frame 'cd ~/devkit-game/WiiCompiled && chmod 755 WiiCompiled.new && mv -f WiiCompiled.new WiiCompiled'
-```
-
-The executable is copied under a new name and moved into place, which works even while an old copy
-is open.
+Run the same command again; you can leave out `--disc`. The script downloads the newest release,
+puts only the files that changed over the old source, rebuilds what they touch, and replaces the
+game on the Frame. Dawn is only rebuilt when a release changes its patches (the release notes say
+so), so an update usually takes minutes. `--release <tag>` builds a given release instead.
 
 ## Recommended settings
 
@@ -238,43 +173,145 @@ frames means the GPU is over budget: lower `render_scale` or `resolution_multipl
 
 **Crashes.** `console.log` then names the faulting thread and gives its pc and a backtrace as
 `module+offset`. On the build machine,
-`addr2line -f -C -e Wiicompiled_VR_Frame/native-build/WiiCompiled 0x<offset>` turns an offset in
-`WiiCompiled` into a function: the executable is not stripped.
+`addr2line -f -C -e ~/wiicompiled-frame/source/native-build/WiiCompiled 0x<offset>` turns an offset
+in `WiiCompiled` into a function: the executable is not stripped. (Built by hand, the executable is
+in `~/wiicompiled/Wiicompiled_VR_Frame/native-build/`.)
 
-**Building.** A build that freezes the machine has run out of memory: lower `--jobs` or
-`--parallel`. A missing CMake package means installing its `-dev` package in the container and
+**Building.** The install script's log is `~/wiicompiled-frame/build.log`; its end says why a build
+stopped. A build that freezes the machine has run out of memory: lower `--jobs` (or, by hand,
+`--parallel`). A missing CMake package means installing its `-dev` package in the container and
 running the same command again.
+
+## Building by hand
+
+These are the steps the install script runs, for when you want to see or change each one. Set up
+emulation as in [Quick start](#quick-start) step 1 first.
+
+### 1. Download the release and extract your disc
+
+Take the newest release from the [Releases](https://github.com/mitch030504/Wiicompiled_VR_Frame/releases)
+page; the commands use `frame-beta-1`, so put the newest release's tag in its place:
+
+```bash
+mkdir -p ~/wiicompiled/Wiicompiled_VR_Frame; cd ~/wiicompiled
+curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-1.tar.gz \
+    | tar -xz --strip-components=1 -C Wiicompiled_VR_Frame
+curl -fL -o nodtool https://github.com/encounter/nod/releases/download/v2.0.0-alpha.10/nodtool-linux-x86_64
+chmod +x nodtool
+./nodtool extract "/path/to/Mario Kart Wii.wbfs" disc-extract
+mkdir -p Wiicompiled_VR_Frame/Assets
+cp disc-extract/sys/main.dol disc-extract/files/rel/StaticR.rel Wiicompiled_VR_Frame/Assets/
+```
+
+`disc-extract` must hold `sys/` and `files/` directly; keep it, the game reads it when it runs.
+
+### 2. Build, inside an ARM64 container
+
+```bash
+podman run -it --name wiicompiled-frame --platform linux/arm64 -v ~/wiicompiled:/work docker.io/library/debian:trixie bash
+```
+
+Then, in the container's bash prompt:
+
+```bash
+apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl git python3 xz-utils unzip file pkg-config g++ binutils libicu-dev zlib1g-dev \
+    libvulkan-dev libx11-dev libx11-xcb-dev libxcb1-dev libxext-dev libxrandr-dev libxinerama-dev \
+    libxcursor-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols \
+    libdecor-0-dev libegl-dev libgl-dev libgles-dev libdrm-dev libgbm-dev libasound2-dev libpulse-dev \
+    libpipewire-0.3-dev libudev-dev libdbus-1-dev libusb-1.0-0-dev
+cd /work/Wiicompiled_VR_Frame
+Launcher/prepare-portable-tools.sh --arch aarch64 --destination /work/tools   # clang 22, CMake, Ninja
+T=/work/tools/toolchain-aarch64/bin
+curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 8.0 --install-dir /work/dotnet
+Launcher/build-dawn-linux.sh --work-dir /work/dawn --cc $T/clang --cxx $T/clang++ \
+    --cmake $T/cmake --ninja $T/ninja --jobs 4 2>&1 | tee -a /work/dawn.log
+Launcher/local-build.sh --output-dir /work/out --cc $T/clang --cxx $T/clang++ --fuse-ld lld \
+    --cmake $T/cmake --ninja $T/ninja --dotnet /work/dotnet/dotnet --parallel 4 \
+    --openxr --dawn-package /work/dawn/package --headset steam_frame 2>&1 | tee -a /work/game.log
+exit
+```
+
+- Dawn is done when it prints `Patched Dawn for Linux ready`, the game when it prints
+  `MKWCBUILD:OUTPUT=/work/out`.
+- `--jobs 4` and `--parallel 4` suit 16 GB of memory. Compiles take more memory under emulation, and
+  16 at once froze a 16 GB laptop. Use 8 with 32 GB.
+- If it stops, `podman start -ai wiicompiled-frame` gets you back in. Run `cd /work/Wiicompiled_VR_Frame;
+  T=/work/tools/toolchain-aarch64/bin`, then the step that stopped: both scripts resume.
+
+### 3. Install on the Frame
+
+The easiest way is [Frame Control](https://github.com/saphid/frame-control): set up its connection
+to the Frame, then drag `~/wiicompiled/out` onto **Send to Frame**. Name it `WiiCompiled` and keep
+**Launches** on `WiiCompiled`. It adds the game to your Steam library, in `~/devkit-game/WiiCompiled/`
+on the Frame.
+
+Then copy the disc over and, on a first install, tell the game where it is (Frame Control's SSH
+key answers to `frame`; use `steamos@<frame-ip>` otherwise):
+
+```bash
+ssh frame mkdir -p wiicompiled
+scp -r ~/wiicompiled/disc-extract frame:wiicompiled/disc
+ssh frame 'mkdir -p ~/.local/share/WiiCompiled && printf "[paths]\ndvd_root = \"/home/steamos/wiicompiled/disc\"\n" > ~/.local/share/WiiCompiled/Config.toml'
+```
+
+Without Frame Control, `scp -r ~/wiicompiled/out frame:wiicompiled/` and start
+`~/wiicompiled/out/WiiCompiled` from a terminal in the Frame's Desktop Mode, with SteamVR running.
+
+### Updating by hand
+
+When a new release comes out, put its changed files over the old source, rebuild, and replace only
+the executable. `rsync -c` copies just the files whose content changed and stamps them with the
+current time, so the build recompiles exactly those. Unpacking over the source would restore each
+file's commit date, which can be older than the last build, and changes would be skipped. Your
+`Assets/` and build folders stay. Install `rsync` if your system lacks it, and put the new release's
+tag in place of `frame-beta-2`:
+
+```bash
+cd ~/wiicompiled
+mkdir -p release-new
+curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-2.tar.gz \
+    | tar -xz --strip-components=1 -C release-new
+rsync -rcE release-new/ Wiicompiled_VR_Frame/
+rm -rf release-new
+podman start -ai wiicompiled-frame
+# in the container: cd /work/Wiicompiled_VR_Frame; T=/work/tools/toolchain-aarch64/bin, then the
+# build-dawn-linux.sh and local-build.sh lines from step 2, then exit. Dawn only rebuilds when the
+# release changed its patches (the release notes say so); otherwise both finish quickly.
+scp ~/wiicompiled/out/WiiCompiled frame:devkit-game/WiiCompiled/WiiCompiled.new
+ssh frame 'cd ~/devkit-game/WiiCompiled && chmod 755 WiiCompiled.new && mv -f WiiCompiled.new WiiCompiled'
+```
+
+The executable is copied under a new name and moved into place, which works even while an old copy
+is open.
 
 ## Other ways to build
 
-**On the Frame itself.** SteamOS's root file system is read-only, but it ships podman. Over SSH,
-with the newest release's tag:
+**On the Frame itself.** SteamOS's root file system is read-only, but it ships podman, and the
+install script runs there too. Over SSH (`ssh steamos@<frame-ip>`), or in a Desktop Mode terminal:
 
 ```bash
-mkdir -p ~/wiicompiled/Wiicompiled_VR_Frame && cd ~/wiicompiled
-curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-1.tar.gz \
-    | tar -xz --strip-components=1 -C Wiicompiled_VR_Frame
-podman run -it --name wiicompiled-frame -v ~/wiicompiled:/work:Z docker.io/library/debian:trixie bash
+curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/openxr-work/Launcher/steam-frame-install.sh \
+    | bash -s -- --disc "/path/to/Mario Kart Wii.wbfs" --frame local
 ```
 
-It is native ARM64, so no emulation, but the Frame has less memory and cooling than a PC. Extract
-your disc as in step 2, with `nodtool-linux-aarch64` instead of `nodtool-linux-x86_64`, copy
-`main.dol` and `StaticR.rel` into `Assets/`, and run step 3's commands in the container. The game
-lands in `~/wiicompiled/out`.
+It is native ARM64, so no emulation, but the Frame has less memory and cooling than a PC; keep it
+on its charger. The game then reads the disc straight from `~/wiicompiled-frame/disc`. By hand, the
+steps under [Building by hand](#building-by-hand) work the same in a container started without
+`--platform linux/arm64`, with `nodtool-linux-aarch64` in place of `nodtool-linux-x86_64`.
 
-**With Docker on a stronger machine** (a server, for example). The same container and commands
-work, and much faster with more cores and memory. Copy `~/wiicompiled` over without Dawn's build
-tree, and run the build detached so a closed SSH session does not stop it:
+**On a stronger machine** (a server, for example). The script works with Docker as well as podman,
+and runs much faster with more cores and memory. A machine that cannot reach the Frame builds
+without `--frame`; give it more compiles at once if it has the memory, `--jobs 8` for 32 GB:
 
 ```bash
-rsync -a --exclude dawn/build --exclude 'dawn/dawn-*' --exclude disc-extract \
-    ~/wiicompiled/ root@<server>:/srv/wiicompiled/        # from the PC
-docker run -d --name wiicompiled-frame --platform linux/arm64 -v /srv/wiicompiled:/work \
-    debian:trixie bash -c 'bash /work/build-game.sh >> /work/game.log 2>&1'
+curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/openxr-work/Launcher/steam-frame-install.sh \
+    | bash -s -- --disc "/path/to/Mario Kart Wii.wbfs" --jobs 8
 ```
 
-`build-game.sh` holds step 3's `apt-get` line and `local-build.sh` command, with `--parallel 8` for
-32 GB. `docker start wiicompiled-frame` runs it again after an update.
+Run it in `tmux` or `screen` so a closed SSH session does not stop it. Copy `~/wiicompiled-frame/out`
+and `~/wiicompiled-frame/disc` back to the PC, send `out` to the Frame with Frame Control and copy
+the disc over as in [Install on the Frame](#3-install-on-the-frame).
 
 On some hosts, for example Unraid 7 with kernel 6.18, `binfmt_misc` registrations are per container.
 `tonistiigi/binfmt --install arm64` then reports success, but Debian answers `exec format error`.
