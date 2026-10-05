@@ -221,9 +221,13 @@ void render(const wgpu::RenderPassEncoder& pass) noexcept {
     ImGui_ImplSDLRenderer3_RenderDrawData(data, renderer);
     SDL_RenderPresent(renderer);
   } else {
+#ifdef AURORA_GFX_DEBUG_GROUPS
     pass.PushDebugGroup("Aurora: Dear Imgui");
+#endif
     ImGui_ImplWGPU_RenderDrawData(data, pass.Get());
+#ifdef AURORA_GFX_DEBUG_GROUPS
     pass.PopDebugGroup();
+#endif
   }
 }
 
@@ -287,9 +291,13 @@ void render(const wgpu::RenderPassEncoder& pass, const ImDrawData* data) noexcep
   if (g_useSdlRenderer || data == nullptr) {
     return;
   }
+#ifdef AURORA_GFX_DEBUG_GROUPS
   pass.PushDebugGroup("Aurora: Dear Imgui");
+#endif
   ImGui_ImplWGPU_RenderDrawData(const_cast<ImDrawData*>(data), pass.Get());
+#ifdef AURORA_GFX_DEBUG_GROUPS
   pass.PopDebugGroup();
+#endif
 }
 
 StereoOverlay latch_stereo_overlay() noexcept {
@@ -303,9 +311,13 @@ bool render_draw_data(const wgpu::RenderPassEncoder& pass, ImDrawData* data) noe
   if (g_useSdlRenderer || data == nullptr || ImGui::GetCurrentContext() == nullptr) {
     return false;
   }
+#ifdef AURORA_GFX_DEBUG_GROUPS
   pass.PushDebugGroup("Aurora: Dear Imgui headset panel");
+#endif
   ImGui_ImplWGPU_RenderDrawData(data, pass.Get());
+#ifdef AURORA_GFX_DEBUG_GROUPS
   pass.PopDebugGroup();
+#endif
   return true;
 }
 
