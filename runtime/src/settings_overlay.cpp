@@ -11,6 +11,7 @@
 #include "music_attenuation.h"
 #include "runtime_config.h"
 #include "runtime_log.h"
+#include "update_check.h"
 #include "vr/camera_toggle.h"
 #include "vr/mkw_vr_culling.h"
 #include "vr/mkw_vr_first_person.h"
@@ -2094,6 +2095,107 @@ void DrawDiagnosticsSettings() {
     }
 }
 
+bool g_updatePromptOpen = false;
+std::string g_updateError;
+
+void DrawUpdatePrompt() {
+    constexpr const char* kTitle = "Update";
+    if (g_updatePromptOpen && !ImGui::IsPopupOpen(kTitle)) ImGui::OpenPopup(kTitle);
+    if (!ImGui::BeginPopupModal(kTitle, &g_updatePromptOpen, ImGuiWindowFlags_AlwaysAutoResize)) return;
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + Scaled(380.0f));
+    ImGui::TextUnformatted("The update is built here on the Frame, in the background, which takes a "
+                           "while: keep the Frame on its charger. You can keep playing meanwhile, "
+                           "though the game may stutter while it compiles. Close the game whenever "
+                           "you like: the update carries on and opens it again when it is done.");
+    ImGui::PopTextWrapPos();
+    if (ImGui::Button("Start the update", ImVec2(Scaled(180.0f), 0.0f))) {
+        update_check::StartUpdate(g_updateError);
+        g_updatePromptOpen = false;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel", ImVec2(Scaled(120.0f), 0.0f))) g_updatePromptOpen = false;
+    if (!g_updatePromptOpen) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+}
+
+void DrawUpdateSettings() {
+    const update_check::Status status = update_check::Current();
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + Scaled(380.0f));
+    if (status.installedRelease.empty()) {
+        ImGui::TextUnformatted("This build came from a source tree rather than a release.");
+    } else {
+        ImGui::Text("Release %s", status.installedRelease.c_str());
+    }
+
+    const bool busy = status.state == update_check::State::Checking ||
+                      status.state == update_check::State::Updating;
+    switch (status.state) {
+    case update_check::State::PcInstall:
+        ImGui::TextDisabled("The PC that built this installs its updates. Run the installer there "
+                            "again with --update.");
+        break;
+    case update_check::State::Idle:
+        break;
+    case update_check::State::Checking:
+        ImGui::TextDisabled("Looking for a newer release...");
+        break;
+    case update_check::State::UpToDate:
+        ImGui::TextDisabled("%s", status.detail.c_str());
+        break;
+    case update_check::State::Available:
+        ImGui::TextUnformatted(status.detail.c_str());
+        break;
+    case update_check::State::Updating:
+        ImGui::Text("Updating: %s", status.detail.c_str());
+        ImGui::TextDisabled("Keep playing, or close the game: the update carries on and opens it "
+                            "again when it is done.");
+        break;
+    case update_check::State::Failed:
+        ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.35f, 1.0f), "%s", status.detail.c_str());
+        break;
+    }
+    if (!g_updateError.empty()) {
+        ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.35f, 1.0f), "%s", g_updateError.c_str());
+    }
+    if (status.restartNeeded && status.state != update_check::State::Updating) {
+        // The update replaced the build on disk; this process is still the old one.
+        ImGui::TextUnformatted("The update is installed. Quit and start the game again to use it.");
+    }
+    ImGui::PopTextWrapPos();
+
+    if (status.state == update_check::State::PcInstall) {
+        return;
+    }
+    if (status.restartNeeded && status.state != update_check::State::Updating) {
+        if (ImGui::Button("Quit")) g_exitPromptOpen = true;
+        ImGui::SameLine();
+    }
+    ImGui::BeginDisabled(busy);
+    if (ImGui::Button(status.state == update_check::State::Idle ? "Check for updates" : "Check again")) {
+        g_updateError.clear();
+        update_check::StartCheck();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Asks github.com for the newest release, and Retro Rewind's server for\n"
+                          "its newest pack when this install has one. Nothing is downloaded\n"
+                          "until you choose to update.");
+    }
+    if (status.state == update_check::State::Available) {
+        ImGui::SameLine();
+        if (ImGui::Button("Update now")) {
+            g_updateError.clear();
+            g_updatePromptOpen = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Builds the update here on the Frame, in the background. The game\n"
+                              "can stay open and shows the progress here.");
+        }
+    }
+    ImGui::EndDisabled();
+    // The prompt itself is drawn at the top level, as the exit prompt is: the tab lives both in the
+    // headset's panel and in a desktop menu, and a modal must outlive whichever opened it.
+}
+
 void DrawFpsOverlay() {
     AuroraPresentTiming presentTiming{};
     aurora_get_present_timing(&presentTiming);
@@ -2291,6 +2393,11 @@ void DrawTopBar() {
         ImGui::EndMenu();
     }
 
+    if (update_check::Relevant(update_check::Current()) && ImGui::BeginMenu("Updates")) {
+        DrawUpdateSettings();
+        ImGui::EndMenu();
+    }
+
     const ImGuiStyle& style = ImGui::GetStyle();
     const float hideWidth = ImGui::CalcTextSize("Hide (F10)").x + style.FramePadding.x * 2.0f;
     const float exitWidth = ImGui::CalcTextSize("X").x + style.FramePadding.x * 2.0f;
@@ -2479,6 +2586,9 @@ void DrawVrSettingsPanelWindow() {
             tab("Controllers", DrawControllerSettings);
             tab("Audio", DrawAudioSettings);
             tab("Diagnostics", DrawDiagnosticsSettings);
+            if (update_check::Relevant(update_check::Current())) {
+                tab("Updates", DrawUpdateSettings);
+            }
             ImGui::EndTabBar();
         }
     }
@@ -2687,6 +2797,7 @@ void Draw() noexcept {
     DrawFpsOverlay();
     DrawTopBar();
     DrawExitPrompt();
+    DrawUpdatePrompt();
     controller_mapping_wizard::Draw();
     // The wizard captures raw presses; keep them out of the game.
     const bool inputBlocked = controller_mapping_wizard::IsActive() || g_rebind.active;

@@ -106,10 +106,33 @@ shoulder button, go to the **VR** tab and set the [recommended settings](#recomm
 
 ### Updating
 
-Run the same command again; you can leave out `--disc`. The script downloads the newest release,
-puts only the files that changed over the old source, rebuilds what they touch, and replaces the
-game on the Frame. Dawn is only rebuilt when a release changes its patches (the release notes say
-so), so an update usually takes minutes. `--release <tag>` builds a given release instead.
+```bash
+Launcher/steam-frame-install.sh --update
+```
+
+`--update` reuses the options the install was made with, so there is nothing to repeat: it reads
+them from `install.conf` in the work dir, and any option you do pass wins over the saved one. It
+downloads the newest release, puts only the files that changed over the old source, rebuilds what
+they touch, and replaces the game on the Frame. Dawn is only rebuilt when a release changes its
+patches (the release notes say so), so an update usually takes minutes. When the Frame already has
+the newest release, and the newest Retro Rewind pack if you use one, it says so and builds nothing.
+
+`--check` only reports whether an update is available. `--release <tag>` builds a given release
+instead. Running the whole install command again works as it always did.
+
+### Updating from inside the game
+
+An install built on the Frame itself (`--frame local`, [below](#other-ways-to-build)) can update
+itself: the settings panel grows an **Updates** tab with the release you are running and a **Check
+for updates** button, and when there is one, **Update now** builds it in the background. The tab
+shows each step and how far the build is while you keep playing (the game may stutter while it
+compiles), and says when to restart the game to use the update.
+
+The update runs as a systemd user service (`wiicompiled-update.service`), behind the game in line
+for the processor, so it carries on if you close the game, and then opens the game again when it is
+done. Keep the Frame on its charger for it. Installed from a PC, the tab says so and the update is
+run there. Progress is not shown as Steam notifications: on the Frame, Steam receives them from
+SteamOS's notification service but does not display them.
 
 ## Recommended settings
 
@@ -314,7 +337,8 @@ curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/op
 ```
 
 It is native ARM64, so no emulation, but the Frame has less memory and cooling than a PC; keep it
-on its charger. The game then reads the disc straight from `~/wiicompiled-frame/disc`. By hand, the
+on its charger. The game then reads the disc straight from `~/wiicompiled-frame/disc`, and this is
+the install that can [update itself from inside the game](#updating-from-inside-the-game). By hand, the
 steps under [Building by hand](#building-by-hand) work the same in a container started without
 `--platform linux/arm64`, with `nodtool-linux-aarch64` in place of `nodtool-linux-x86_64`.
 
