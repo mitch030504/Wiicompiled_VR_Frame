@@ -100,6 +100,7 @@ struct RuntimeUserConfig {
     std::optional<std::string> vrPerformanceLevel;
     std::optional<std::string> vrFoveation;
     std::optional<bool> vrEyeTrackedFoveation;
+    std::optional<bool> vrRepeatFrames;
     std::optional<std::string> vrRecenterKey;
     std::optional<float> vrLeanBackDegrees;
     // F10 > Diagnostics: OpenXR pacing and presentation logging in console.log.
@@ -336,6 +337,19 @@ inline bool IsSupportedVrFoveation(std::string_view value) {
 inline constexpr bool kVrEyeTrackedFoveationDefault = true;
 #else
 inline constexpr bool kVrEyeTrackedFoveationDefault = false;
+#endif
+
+// Repeated frames: while the game has no new frame for a display refresh, the last one is submitted
+// again with the head pose it was rendered for, which the compositor turns to the current one. A
+// runtime then sees the app at the display's rate instead of at the game's 60 FPS, and does not
+// halve the app's rate and fill every other refresh itself: SteamVR's filled frames double the HUD
+// and the menu screen while the head turns. On by default on the Steam Frame. Live.
+#if defined(MKW_HEADSET_STEAM_FRAME)
+inline constexpr bool kVrRepeatFramesDefault = true;
+#define MKW_VR_REPEAT_FRAMES_DEFAULT_TOML "true"
+#else
+inline constexpr bool kVrRepeatFramesDefault = false;
+#define MKW_VR_REPEAT_FRAMES_DEFAULT_TOML "false"
 #endif
 
 // The level aurora_set_stereo_foveation takes; anything unknown is off.
@@ -590,6 +604,9 @@ inline void EnsureConfigFile() {
               "# at 60, so 120 shows every frame twice. Only runtimes that let apps\n"
               "# choose (XR_FB_display_refresh_rate) take it. Live.\n"
               "refresh_rate = " MKW_VR_REFRESH_RATE_DEFAULT_TEXT "\n"
+              "# Submit the last frame again for each refresh the game has no new\n"
+              "# frame for, so the runtime does not fill those refreshes itself. Live.\n"
+              "repeat_frames = " MKW_VR_REPEAT_FRAMES_DEFAULT_TOML "\n"
               "render_scale = " MKW_VR_RENDER_SCALE_DEFAULT_TEXT "\n"
               "world_units_per_meter = 500.0\n"
               "hud_distance_meters = 2.0\n"
@@ -910,6 +927,7 @@ inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
         config.vrFoveation = *value;
     }
     config.vrEyeTrackedFoveation = FindConfigValue<bool>(document, "vr", "eye_tracked_foveation");
+    config.vrRepeatFrames = FindConfigValue<bool>(document, "vr", "repeat_frames");
     if (auto value = FindConfigValue<std::string>(document, "vr", "mirror_view");
         value && IsSupportedVrMirrorView(*value)) {
         config.vrMirrorView = *value;
@@ -1320,6 +1338,11 @@ inline bool SetVrFoveation(std::string value) {
     }
     Mutable().vrFoveation = value;
     return WriteSetting("vr", "foveation", FormatString(value));
+}
+
+inline bool SetVrRepeatFrames(bool value) {
+    Mutable().vrRepeatFrames = value;
+    return WriteSetting("vr", "repeat_frames", value ? "true" : "false");
 }
 
 inline bool SetVrEyeTrackedFoveation(bool value) {
@@ -1851,6 +1874,10 @@ inline std::string VrPerformanceLevel(std::string fallback = kVrPerformanceLevel
 inline std::string VrFoveation(std::string fallback = kVrFoveationDefault) {
     const auto& value = Get().vrFoveation;
     return value && IsSupportedVrFoveation(*value) ? *value : std::move(fallback);
+}
+
+inline bool VrRepeatFrames(bool fallback = kVrRepeatFramesDefault) {
+    return Get().vrRepeatFrames.value_or(fallback);
 }
 
 inline bool VrEyeTrackedFoveation(bool fallback = kVrEyeTrackedFoveationDefault) {

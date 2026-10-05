@@ -710,6 +710,11 @@ private:
     // Skipped eye copies tolerated back to back before the session is given up: a few seconds
     // at the headset's refresh rate.
     static constexpr uint32_t kMaxConsecutiveSkips = 300;
+    // With [vr] repeat_frames, render-first pacing waits for the eyes until this long before the
+    // runtime's next wake, then spends that refresh on the retained layer; before the first wake,
+    // it waits this many milliseconds. The repeat's xrWaitFrame does the actual pacing.
+    static constexpr std::chrono::microseconds kRepeatFrameMargin{1500};
+    static constexpr uint32_t kRepeatFramePollMs = 1;
 
     static float ClampRenderScale(float scale) noexcept {
         return std::clamp(scale, RuntimeConfigFile::kVrRenderScaleMin, RuntimeConfigFile::kVrRenderScaleMax);
@@ -1335,13 +1340,28 @@ private:
         aurora_notify_stereo_frame();
 
         // Aurora renders the eyes at its next seal. Meanwhile the compositor keeps showing the
-        // retained layer; a 50 ms stall repeats it explicitly and withdraws the packet.
+        // retained layer; a 50 ms stall repeats it explicitly and withdraws the packet. With
+        // [vr] repeat_frames the retained layer is also submitted for every display refresh the
+        // eyes are not ready for, so the runtime sees the app at the display's rate rather than the
+        // game's and never fills refreshes in itself. The eyes are waited for until shortly before
+        // the runtime's next wake: a repeat begun earlier would spend a refresh the new eyes could
+        // still have made, and hold back the next packet past the game's next frame.
+        const bool repeat_frames = RuntimeConfigFile::VrRepeatFrames();
+        const auto wait_ms = [&]() -> uint32_t {
+            if (!repeat_frames) return 50;
+            const XrDuration period = runtime_->LastWaitFramePeriod();
+            if (period <= 0) return kRepeatFramePollMs;
+            const auto wake = runtime_->LastWaitFrameReturn() + std::chrono::nanoseconds(period);
+            const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(
+                wake - kRepeatFrameMargin - std::chrono::steady_clock::now());
+            return static_cast<uint32_t>(std::clamp<int64_t>(left.count(), 0, 50));
+        };
         OpenXRSubmissionStatus submission = OpenXRSubmissionStatus::Timeout;
         bool canceled_before_encode = false;
         const auto cancel_after = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
         while (!stop_.load(std::memory_order_acquire) && submission == OpenXRSubmissionStatus::Timeout) {
             submission = diagnostics::Measure(diagnostics::Stage::SubmissionWait, [&] {
-                return backend_->WaitForSubmission(packet, 50);
+                return backend_->WaitForSubmission(packet, wait_ms());
             });
             if (submission == OpenXRSubmissionStatus::Timeout) {
                 if (std::chrono::steady_clock::now() >= cancel_after) {

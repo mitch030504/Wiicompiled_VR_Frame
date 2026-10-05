@@ -79,6 +79,19 @@ int main() {
     Require(!RuntimeConfigFile::kVrEyeTrackedFoveationDefault);
 #endif
 
+    // [vr] repeat_frames: the retained layer fills the refreshes the game has no frame for.
+    Require(Parse("[vr]\nrepeat_frames = true\n").vrRepeatFrames == true);
+    Require(Parse("[vr]\nrepeat_frames = false\n").vrRepeatFrames == false);
+    Require(!Parse("[vr]\nrepeat_frames = 1\n").vrRepeatFrames.has_value());
+    Require(!Parse("[vr]\n").vrRepeatFrames.has_value());
+#if defined(MKW_HEADSET_STEAM_FRAME)
+    Require(RuntimeConfigFile::kVrRepeatFramesDefault);
+    Require(std::string_view(MKW_VR_REPEAT_FRAMES_DEFAULT_TOML) == "true");
+#else
+    Require(!RuntimeConfigFile::kVrRepeatFramesDefault);
+    Require(std::string_view(MKW_VR_REPEAT_FRAMES_DEFAULT_TOML) == "false");
+#endif
+
     // [vr] passthrough: Horizon OS's room view, which the Steam Frame build does not offer.
     Require(Parse("[vr]\npassthrough = false\n").vrPassthrough == false);
     Require(!Parse("[vr]\n").vrPassthrough.has_value());

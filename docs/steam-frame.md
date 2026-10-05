@@ -15,8 +15,14 @@ Most of what this document describes is shared by both: the Frame controller pro
 request, eye-tracked foveation and the Frame's defaults. The native build gets them through
 `MKW_HEADSET=steam_frame` (`MKW_HEADSET_STEAM_FRAME`), as the Android flavour does.
 
-**Status: not yet run on a Steam Frame.** The native build's VR code compiles and the unit tests
-pass; building it on the Frame and the device checks are still to do.
+**Status: beta, played on a Steam Frame.** The native build starts in VR under SteamVR, renders
+both eyes on the device Dawn shares with the runtime, binds the Frame's controllers, runs at 120 Hz
+with every game frame shown (`new=60 repeat=60` a second, no late frames, at `render_scale = 1.25`,
+the panels' 2160x2160), and follows the eyes with its foveation. Two device runs found and fixed a
+crash on race restart (see [Eye-tracked foveation](#eye-tracked-foveation)) and SteamVR halving the
+app's rate (see [Refresh rate](#refresh-rate)). Still open, in [Known issues](#known-issues): doubled
+images in races and on the HUD, sometimes in one eye only, and foveation that follows the right eye
+less well than the left.
 
 ## The native SteamOS build
 
@@ -45,7 +51,7 @@ started with the `podman` SteamOS already ships. Over SSH (`ssh steamos@<frame-i
 
 ```bash
 mkdir -p ~/wiicompiled && cd ~/wiicompiled
-git clone -b claude/peaceful-keller-2ek99b https://github.com/mitch030504/Wiicompiled_VR_Frame.git
+git clone https://github.com/mitch030504/Wiicompiled_VR_Frame.git
 podman run -it --name wiicompiled-build -v ~/wiicompiled:/work:Z docker.io/library/debian:trixie bash
 ```
 
@@ -81,10 +87,102 @@ SteamOS's, so the binary runs on SteamOS outside the container. If CMake reports
 install its `-dev` package in the container and run the same command again; both scripts resume
 where they stopped.
 
+### Building it on a Linux PC
+
+The same container runs on an x86_64 Linux PC as an emulated ARM64 one, which spares the Frame's
+storage and battery; the result is copied over. Emulation makes it several times slower: the
+first Dawn build takes hours. On the PC (these commands also work in fish):
+
+```bash
+sudo pacman -S --needed podman qemu-user-static qemu-user-static-binfmt   # Arch, CachyOS
+sudo systemctl restart systemd-binfmt
+podman run --rm --platform linux/arm64 docker.io/library/debian:trixie uname -m   # prints aarch64
+```
+
+Other distributions name the packages differently (on Debian and Ubuntu: `podman
+qemu-user-static binfmt-support`). If rootless podman complains about subordinate ids, run
+`sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 $USER` and log in again.
+
+Extract your disc image with [nodtool](https://github.com/encounter/nod), the extractor the
+installer uses, and put the two files the build reads into `Assets/`:
+
+```bash
+mkdir -p ~/wiicompiled; cd ~/wiicompiled
+git clone https://github.com/mitch030504/Wiicompiled_VR_Frame.git
+curl -fL -o nodtool https://github.com/encounter/nod/releases/download/v2.0.0-alpha.10/nodtool-linux-x86_64
+chmod +x nodtool
+./nodtool extract "/path/to/Mario Kart Wii.wbfs" disc-extract
+mkdir -p Wiicompiled_VR_Frame/Assets
+cp disc-extract/sys/main.dol disc-extract/files/rel/StaticR.rel Wiicompiled_VR_Frame/Assets/
+podman run -it --name wiicompiled-frame --platform linux/arm64 -v ~/wiicompiled:/work docker.io/library/debian:trixie bash
+```
+
+Inside the container, run the commands of [Building it on the Frame](#building-it-on-the-frame)
+from `apt-get` on, skipping the `cp` into `Assets/`, which is done. `podman start -ai
+wiicompiled-frame` gets back into it; set `T` again before resuming. Then copy the game and the
+extracted disc to the Frame:
+
+```bash
+ssh steamos@<frame-ip> mkdir -p wiicompiled
+scp -r ~/wiicompiled/out steamos@<frame-ip>:wiicompiled/
+scp -r ~/wiicompiled/disc-extract steamos@<frame-ip>:wiicompiled/disc
+```
+
+### Building it with Docker on another machine
+
+A faster x86_64 machine helps most with the game itself (the translated code is a few thousand large
+files). Docker works as podman does, with one difference on hosts whose `binfmt_misc` registrations
+are per container (Unraid 7 with kernel 6.18): `tonistiigi/binfmt --install arm64` then succeeds but
+only inside its own container, and Debian answers `exec format error`. Register the emulator on the
+host instead, with the `P` flag the tonistiigi build of qemu expects (without it every program loses
+its first argument: `uname -m` prints `Linux`):
+
+```bash
+docker create --name qemu-src tonistiigi/binfmt
+docker cp qemu-src:/usr/bin/qemu-aarch64 /usr/local/bin/qemu-aarch64
+docker rm qemu-src
+echo ':qemu-aarch64:M::\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xb7\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/local/bin/qemu-aarch64:POCF' > /proc/sys/fs/binfmt_misc/register
+docker run --rm --platform linux/arm64 debian:trixie uname -m   # aarch64
+```
+
+Unraid keeps `/usr/local/bin` in memory, so this is repeated after a reboot. Copy the work directory
+over, without Dawn's build tree (the package is what the game links), and run the build detached so
+that a closed SSH session does not stop it:
+
+```bash
+rsync -a --exclude dawn/build --exclude 'dawn/dawn-*' --exclude disc-extract \
+    ~/wiicompiled/ root@<server>:/mnt/user/appdata/wiicompiled/        # from the PC
+docker run -d --name wiicompiled-frame --platform linux/arm64 \
+    -v /mnt/user/appdata/wiicompiled:/work debian:trixie \
+    bash -c 'bash /work/build-game.sh >> /work/game.log 2>&1'
+```
+
+`build-game.sh` holds the `apt-get` line of [Building it on the Frame](#building-it-on-the-frame)
+and the `local-build.sh` command, with `--parallel 8` for 32 GB of memory (compiles take more memory
+under emulation: Dawn's build at 16 jobs froze a 16 GB laptop, and finished at 4). `docker start
+wiicompiled-frame` runs it again after a change: the translation is reused and only what changed
+is compiled.
+
+### Installing it with Frame Control
+
+[Frame Control](https://github.com/saphid/frame-control) adds a folder to the Frame's Steam library as
+a Devkit Game: drop the `out` folder on **Send to Frame** and keep **Launches** on `WiiCompiled`.
+It picks `SteamLinuxRuntime_4-arm64` for an ARM64 program, but Steam starts such a title natively,
+which this build needs (it uses the system's `libpng16`, `libstdc++` and `libz`). The game then lands
+in `~/devkit-game/<name>/` and starts from the library inside the headset, where SteamVR is already
+running. An update only replaces the executable; copy it under another name and move it into place,
+which also works while an old copy is open:
+
+```bash
+scp WiiCompiled frame:devkit-game/WiiCompiled/WiiCompiled.new
+ssh frame 'cd ~/devkit-game/WiiCompiled && chmod 755 WiiCompiled.new && mv -f WiiCompiled.new WiiCompiled'
+```
+
 ### Running it
 
 The game reads its `Config.toml` from `~/.local/share/WiiCompiled/` on SteamOS (it is created on the first start): set
-`[paths] dvd_root` there to your extracted disc (the directory holding `sys/` and `files/`). Start
+`[paths] dvd_root` there to your extracted disc (the directory holding `sys/` and `files/`;
+`/home/steamos/wiicompiled/disc` when it was copied as above). Start
 SteamVR on the Frame, then start `~/wiicompiled/out/WiiCompiled`, from Desktop Mode or as a
 non-Steam game added to the library. The run log is in `Logs/` next to `Config.toml`; it should show,
 in order:
@@ -99,6 +197,35 @@ in order:
 
 `Linux Vulkan OpenXR requires a Dawn built with Aurora's patches` means the build used a stock Dawn:
 check that `--dawn-package` pointed at `build-dawn-linux.sh`'s `package` directory.
+
+The game only writes a `Config.toml` when there is none, so a file holding just `[paths]` and
+`dvd_root` can be written before the first start. Each run gets its own folder under `Logs/`; a
+native crash leaves `crash_sigsegv.txt` there and, in `console.log`, the faulting thread, its pc and
+lr and a backtrace as module + offset, which `addr2line -f -C -e native-build/WiiCompiled <offset>`
+turns into functions on the build machine (the executable is not stripped).
+
+### Settings that matter on the Frame
+
+| Setting | Recommended | Why |
+| --- | --- | --- |
+| `[vr] render_scale` | `1.25` | Scales SteamVR's recommended eye size, 1728x1728 on the Frame; 1.25 is the panels' 2160x2160. The eye passes took 9 to 11 ms a game frame there, with medium foveation. |
+| `[vr] foveation` | `medium` | `off` shades every pixel and costs the most. See [Known issues](#known-issues) if images double. |
+| `[vr] repeat_frames` | `true` (default) | Without it SteamVR halves the app's rate and fills refreshes itself. |
+| `[vr] frame_interpolation_fps` | `0` | Rendering in-between frames needs 120 eye pairs a second; at these resolutions it made things worse. |
+| `[video] resolution_multiplier` | `2` | The game's own frame, which the eyes are made from, at 2x the Wii's. 4x is far too heavy for the Adreno 750. |
+
+## Known issues
+
+- **Doubled images.** Images double in races and on the HUD, worst while racing, at first in the
+  right eye only and later in both. Both eyes get the same frames and repeats, so a one-eyed doubling
+  is not the 60 FPS cadence. The suspect is foveation: Turnip draws a coarse bin at lower resolution
+  and scales it back up, and each eye's density maps change with its gaze. Comparing foveation off,
+  on without eye tracking, and on with it is the next test.
+- **Foveation and the right eye.** The full-density region follows the left eye better than the
+  right. Each eye already gets its own gaze direction; convergence on near content (the HUD screen at
+  2 m, the cockpit) is not yet corrected for.
+- **VR frame interpolation** is not recommended on the Frame (see the table above).
+- **The Android flavour** cannot show a picture in Lepton (below).
 
 ## The Android flavour in Lepton
 
@@ -117,6 +244,7 @@ build; its launch and manifest are Lepton's.
 | `[vr] refresh_rate` default | `0` (the headset's own) | `120` |
 | `[vr] passthrough` | default on (`XR_FB_passthrough`) | not asked for, default off, setting hidden |
 | `[vr] eye_tracked_foveation` default | off | on |
+| `[vr] repeat_frames` default | off | on |
 
 The application ID stays `org.wiicompiled.quest`, so the storage paths in `docs/quest-port.md` hold
 as they are. The kit's CPU string differs from the Quest ones, which gives the Frame its own kit
@@ -181,9 +309,19 @@ so nothing changes on a Quest.
 The request uses the runtime's own value within half a hertz of the setting (runtimes report 119.98
 for 120). Setting it back to `0` restores the rate the session started at. The game renders 60 frames
 a second, so at 120 Hz each frame shows for exactly two refreshes. At 72 or 90 Hz some frames show
-for one refresh and others for two, which judders. The Frame starts at 120. Render-first pacing
-(`docs/quest-port.md`) already waits for each sealed game frame, so on the Frame the pacing summary
-should read about 60 `skipped-slots` a second with no `late` cycles.
+for one refresh and others for two, which judders. The Frame starts at 120.
+
+Render-first pacing (`docs/quest-port.md`) submits a frame once the game has sealed one, 60 times a
+second. On the Frame, SteamVR answered that by running the app at half rate (the pacing summary read
+`predicted-rate=60.0Hz`) and filling every other refresh itself, even with Motion Smoothing off, which
+doubled the HUD and the menu screen while the head turned. `[vr] repeat_frames` (default on for the
+Frame, off elsewhere, live in the headset panel's VR tab) therefore submits the retained layer, with
+the poses it was rendered for, on every refresh the next eyes are not ready for: the pacing thread
+waits for them until 1.5 ms before the runtime's next wake (a period after the last xrWaitFrame
+returned) and otherwise spends that refresh on a keep-alive cycle, which xrWaitFrame paces. The
+summary should then read `predicted-rate=120.0Hz`, about 60 `keepalive` a second and 60 `new`
+layers. A first version waited only a millisecond, so every packet also spent a refresh on a repeat
+it did not need, the next packet missed the game's next frame, and `new` fell to about 35 a second.
 
 Lepton may decline the request (frame-control found SteamVR keeping its own rate there). The session
 log then says `display refresh rate 120 Hz refused` with the rates it offers, and nothing else
@@ -201,13 +339,17 @@ region to where the player looks:
 2. `vr/eye_gaze.h` turns the gaze into tangents of each eye's own view, which may be canted.
    `AuroraStereoFrame` carries them as `gaze` and `gazeValid`, appended after its existing fields.
 3. Aurora snaps the gaze to a cell of two map texels (64 pixels, about 3 degrees) and builds that
-   cell's density map with the level's rings centred on the gaze (`gfx/foveation.hpp`).
+   cell's density map with the level's rings centred on the gaze (`gfx/foveation.hpp`). Both rings
+   are 8 degrees wider than the fixed map's: the full-density region has to cover where a saccade
+   lands until the next game frame's map is bound, the tracker's error, and Turnip shading a whole
+   render-pass bin at one density.
 
-Each eye keeps up to 32 maps, one per cell looked at, so a glance back reuses its map instead of
-uploading a new one. A new map is bound once its upload has completed, and until then the eye keeps
+Each eye keeps up to 128 maps, one per cell looked at, so a glance back reuses its map instead of
+uploading a new one. Each map has a memory block of its own: Turnip reads a map through a host
+mapping of its memory, and Dawn's buffer uploads unmap the shared blocks they sub-allocate from. A new map is bound once its upload has completed, and until then the eye keeps
 the map it had. A blink, lost tracking or the setting turned off returns to the map centred on the
-forward direction, which is byte-identical to the fixed foveation map. No change to the Dawn patch
-was needed: maps stay immutable, and the patch already lets a view be rebound to another map.
+forward direction, which is byte-identical to the fixed foveation map. Maps stay immutable, and the
+Dawn patch lets a view be rebound to another map.
 
 The session log reports `OpenXR eye gaze: available` (or that the runtime has no eye tracker),
 `OpenXR eye gaze: tracking` at the first tracked sample, and `eye foveation medium following the

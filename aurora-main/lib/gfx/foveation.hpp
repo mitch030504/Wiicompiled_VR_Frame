@@ -138,8 +138,16 @@ inline Gaze cell_gaze(uint32_t eyeWidth, uint32_t eyeHeight, uint32_t texel, con
               .tanY = fov.tanUp + (fov.tanDown - fov.tanUp) * v};
 }
 
-inline uint8_t density(Level level, float eccentricity) noexcept {
-  const Rings ring = rings(level);
+// Eye-tracked maps widen both rings by this much. The full-density region has to cover where the eye
+// lands after a saccade until the next game frame's map is bound, the tracker's error, and the
+// snapping of the gaze to cells and of the density to the driver's tiles (Turnip shades a whole
+// render-pass bin at one density).
+inline constexpr float kTrackedMarginDegrees = 8.0f;
+
+inline uint8_t density(Level level, float eccentricity, float margin = 0.0f) noexcept {
+  Rings ring = rings(level);
+  ring.full += margin;
+  ring.half += margin;
   if (eccentricity < ring.full) {
     return kFullDensity;
   }
@@ -176,7 +184,8 @@ inline void build(uint32_t eyeWidth, uint32_t eyeHeight, uint32_t texel, const E
                       static_cast<float>(eyeWidth);
       const float tanX = fov.tanLeft + (fov.tanRight - fov.tanLeft) * u;
       const uint8_t value =
-          density(level, forward ? eccentricity_degrees(tanX, tanY) : angle_from_gaze_degrees(tanX, tanY, gaze));
+          forward ? density(level, eccentricity_degrees(tanX, tanY))
+                  : density(level, angle_from_gaze_degrees(tanX, tanY, gaze), kTrackedMarginDegrees);
       uint8_t* texelBytes = &map.rg8[(static_cast<size_t>(y) * map.width + x) * 2];
       texelBytes[0] = value;
       texelBytes[1] = value;

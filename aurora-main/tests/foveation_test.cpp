@@ -199,8 +199,9 @@ TEST(Foveation, TheForwardGazeKeepsTheFixedMap) {
 
 TEST(Foveation, TheFullDensityRegionFollowsTheGaze) {
   const EyeFov fov = left_eye();
-  // Down and to the right, well off the forward direction.
-  const Gaze gaze{.tanX = std::tan(20.0f * kDegrees), .tanY = std::tan(-15.0f * kDegrees)};
+  // Down and to the right, off the forward direction, with the widened full-density region still
+  // inside the eye so its centre is not pulled in by the edge.
+  const Gaze gaze{.tanX = std::tan(12.0f * kDegrees), .tanY = std::tan(-10.0f * kDegrees)};
   Map map;
   foveation::build(1344, 1408, 32, fov, Level::High, map, gaze);
   double sumX = 0.0;

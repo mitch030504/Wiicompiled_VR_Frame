@@ -50,7 +50,7 @@ foreach ($relative in $sourceFiles | Sort-Object -Unique) {
 # Keep this list explicit: a new unresolved guest dependency must fail the test.
 [uint32]$entry = 0x80001000L
 [uint32[]]$guestCallbacks = @(
-    0x8012B830L, 0x801A0620L, 0x801A1ED8L, 0x801A961CL,
+    0x801284B4L, 0x8012B830L, 0x801A0620L, 0x801A1ED8L, 0x801A961CL,
     0x801AADE0L, 0x801D8D30L, 0x801D9E94L, 0x8055531CL,
     0x8056A470L, 0x8056A580L, 0x805A6C58L
 )

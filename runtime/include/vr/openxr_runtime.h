@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <functional>
@@ -192,6 +193,10 @@ public:
     // BeginFrame and EndFrame using the same token. LocateViews is optional when
     // should_render is false; it is otherwise normally called after BeginFrame.
     OpenXRFrameStatus WaitFrame(OpenXRFrame& frame);
+    // When the last xrWaitFrame returned and the display period it predicted (0 before the first).
+    // The runtime wakes the app about once a period, so the next wake is due a period after it.
+    std::chrono::steady_clock::time_point LastWaitFrameReturn() const noexcept { return m_last_wait_return; }
+    XrDuration LastWaitFramePeriod() const noexcept { return m_last_wait_period; }
     bool BeginFrame(const OpenXRFrame& frame);
     bool LocateViews(OpenXRFrame& frame);
     // Locates the views for `display_time` outside the frame protocol, for a
@@ -312,6 +317,8 @@ private:
     uint64_t m_next_frame_serial = 1;
     uint64_t m_active_frame_serial = 0;
     XrTime m_active_frame_display_time = 0;
+    std::chrono::steady_clock::time_point m_last_wait_return{};
+    XrDuration m_last_wait_period = 0;
 
     OpenXRRuntimeInfo m_runtime_info;
     std::array<OpenXRViewConfiguration, kOpenXREyeCount> m_view_configuration{};

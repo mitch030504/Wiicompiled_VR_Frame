@@ -41,6 +41,7 @@ mirror_view = "normal"
 controller_mode = "wii_remote"
 frame_interpolation_fps = 0
 refresh_rate = 0
+repeat_frames = false
 render_scale = 1.0
 world_units_per_meter = 500.0
 hud_distance_meters = 2.0
@@ -231,6 +232,10 @@ Frame) to leave the headset's own. The game renders 60 frames a second, so 120 H
 for exactly two refreshes. A rate the runtime does not list, or declines, is logged and leaves its
 own; setting `0` again restores the rate the session started at. It is live from F10 / the headset
 panel (*Headset refresh rate*) and the Quest launcher; runtimes without the extension ignore it.
+`repeat_frames` (default off, on for the Steam Frame) submits the last frame again, with the poses it
+was rendered for, on each refresh the game has no new frame for, so a runtime sees the app at the
+display's rate and does not halve it and fill refreshes itself (SteamVR on the Frame did, doubling the
+HUD while the head turned). Render-first pacing only; live from F10 / the headset panel.
 
 ## Controllers
 
@@ -1088,8 +1093,9 @@ did (39 to 41.5 FPS).
 With `eye_tracked_foveation`, a runtime that offers `XR_EXT_eye_gaze_interaction` and reports an eye
 tracker (the Steam Frame's SteamVR) has its gaze pose located for each packet's display time and
 turned into tangents of each eye's view (`vr/eye_gaze.h`), which `AuroraStereoFrame` carries as
-`gaze`/`gazeValid`. Aurora centres the level's rings on the gaze snapped to a cell of two map texels
-(about 3 degrees), keeping up to 32 maps per eye, one per cell looked at, and binds a new one once
+`gaze`/`gazeValid`. Aurora centres the level's rings, each widened by 8 degrees to cover the lag
+and error of tracking, on the gaze snapped to a cell of two map texels (about 3 degrees), keeping up
+to 128 maps per eye, one per cell looked at, and binds a new one once
 its upload completes, the previous map staying bound meanwhile. Without a tracked gaze (a blink, no
 tracker, the setting off) the map is the forward one above, unchanged. Details and the Steam Frame
 checks are in `docs/steam-frame.md`.

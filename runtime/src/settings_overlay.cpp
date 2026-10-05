@@ -158,6 +158,7 @@ static_assert(kVrFoveationLabels.size() == RuntimeConfigFile::kVrFoveationLevels
 int g_vrFoveation = static_cast<int>(RuntimeConfigFile::VrFoveationLevelIndex(RuntimeConfigFile::VrFoveation()));
 bool g_vrEyeTrackedFoveation = RuntimeConfigFile::VrEyeTrackedFoveation();
 #endif
+bool g_vrRepeatFrames = RuntimeConfigFile::VrRepeatFrames();
 bool g_vrFirstPerson = RuntimeConfigFile::VrFirstPerson(false);
 bool g_vrFirstPersonToggleClick = RuntimeConfigFile::VrFirstPersonToggleClick();
 // Set from any thread by the right-thumbstick click, applied on the game thread.
@@ -1556,6 +1557,16 @@ void DrawVrSettings() {
                 "Frame, Virtual Desktop) take it; the Headset line below shows the rate in use. Applies "
                 "immediately.");
         }
+    }
+    if (ImGui::Checkbox("Repeat frames at the headset's rate", &g_vrRepeatFrames)) {
+        RuntimeConfigFile::SetVrRepeatFrames(g_vrRepeatFrames);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(
+            "Shows the last frame again, turned to where you now look, on each refresh the game has "
+            "no new frame for. The headset's runtime then does not drop the game to half its rate and "
+            "fill the gaps itself, which doubles the HUD and the menu screen as you turn your head "
+            "(SteamVR on the Steam Frame). Applies immediately.");
     }
     if (ImGui::Combo("VR frame interpolation (experimental)", &g_vrFrameInterpolationMode,
                      kVrInterpolationLabels.data(), static_cast<int>(kVrInterpolationLabels.size()))) {
