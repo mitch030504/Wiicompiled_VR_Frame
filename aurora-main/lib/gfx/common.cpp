@@ -405,7 +405,7 @@ static size_t g_recordingSnapshotSlot = 0;
 static TextureHandle new_resolve_source_snapshot(wgpu::Extent3D size, wgpu::TextureFormat format) noexcept {
   const wgpu::TextureDescriptor textureDescriptor{
       .label = "GX Copy Source Snapshot",
-      .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
+      .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst,
       .dimension = wgpu::TextureDimension::e2D,
       .size = size,
       .format = format,
