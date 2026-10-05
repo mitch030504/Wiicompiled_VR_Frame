@@ -1,5 +1,9 @@
 # Windows VR distribution
 
+This page covers upstream's Windows releases, kept for the PC build. The Steam Frame releases
+(`frame-*` tags) are source only and are published by `.github/workflows/frame-release.yml` with
+the notes in `docs/releases/<tag>.md`; see the [README](README.md#quick-start).
+
 Distribute only `WiiCompiled-Setup.exe` and its checksum from
 [iChris4/Wiicompiled_VR](https://github.com/iChris4/Wiicompiled_VR/releases), and
 `WheelWizardVRWindows.exe` from [iChris4/WheelWizard_VR](https://github.com/iChris4/WheelWizard_VR/releases).

@@ -147,6 +147,15 @@ headroom. It is live: **F10 → VR → Render resolution** (also on the headset 
 in percent, applies it when the slider is let go, and saves it. Below the slider, *Each eye* gives
 the left eye's size now and, while they differ, the size the slider's value gives.
 
+`adaptive_resolution` (default off; *Adaptive resolution (experimental)* on the VR tab) lowers the
+race's eye resolution in 10% steps, down to 70% of `render_scale`, while new eye frames fall below
+85% of the game's 60 FPS, and raises it again after three seconds on time. The eyes render into the
+top-left corner of the full swapchain image and the projection layer shows only that corner, so the
+compositor scales them up and no swapchain is rebuilt; each step does rebuild the foveation maps.
+`console.log` records every change as `OpenXR: adaptive resolution`. It is offered on the Quest and
+the Linux (Steam Frame) build, not on Windows, whose bridges copy whole eyes. Adapted from
+heurazy's [Wiicompiled_VR-PLUS](https://github.com/heurazy/Wiicompiled_VR-PLUS).
+
 A new scale never interrupts the picture. Each backend keeps two swapchain pairs, one on display and
 one Aurora writes next, and rebuilds only the second, at the start of the frame that writes it; the
 other follows a frame later, once it is the one written. The new swapchains are created before the
