@@ -33,10 +33,11 @@ using IndexBuffer = std::vector<u16>;
 static u32 prepare_idx_template(IndexBuffer& buf, GXPrimitive prim, u16 vtxCount) {
   size_t writePos = 0;
   if (prim == GX_QUADS) {
-    // Retain the existing incomplete-quad behavior: every started group emits a complete six-index quad.
-    buf.resize(((static_cast<u32>(vtxCount) + 3u) / 4u) * 6u);
+    // GX renders a three-vertex remainder as a triangle. One/two are ignored.
+    const u32 completeVertices = static_cast<u32>(vtxCount) & ~3u;
+    buf.resize((completeVertices / 4u) * 6u + (vtxCount % 4u == 3u ? 3u : 0u));
 
-    for (u16 v = 0; v < vtxCount; v += 4) {
+    for (u32 v = 0; v < completeVertices; v += 4) {
       const u16 idx0 = v;
       const u16 idx1 = static_cast<u16>(v + 1);
       const u16 idx2 = static_cast<u16>(v + 2);
@@ -48,15 +49,21 @@ static u32 prepare_idx_template(IndexBuffer& buf, GXPrimitive prim, u16 vtxCount
       buf[writePos++] = idx3;
       buf[writePos++] = idx0;
     }
+    if (vtxCount % 4u == 3u) {
+      buf[writePos++] = static_cast<u16>(completeVertices);
+      buf[writePos++] = static_cast<u16>(completeVertices + 1u);
+      buf[writePos++] = static_cast<u16>(completeVertices + 2u);
+    }
   } else if (prim == GX_TRIANGLES) {
-    buf.resize(vtxCount);
-    for (u16 v = 0; v < vtxCount; ++v) {
+    const u32 completeVertices = (static_cast<u32>(vtxCount) / 3u) * 3u;
+    buf.resize(completeVertices);
+    for (u32 v = 0; v < completeVertices; ++v) {
       buf[writePos++] = v;
     }
   } else if (prim == GX_TRIANGLEFAN) {
-    const u32 indexCount = vtxCount <= 3 ? vtxCount : 3u + (static_cast<u32>(vtxCount) - 3u) * 3u;
+    const u32 indexCount = vtxCount < 3 ? 0u : (static_cast<u32>(vtxCount) - 2u) * 3u;
     buf.resize(indexCount);
-    for (u16 v = 0; v < vtxCount; ++v) {
+    for (u32 v = 0; indexCount != 0 && v < vtxCount; ++v) {
       if (v < 3) {
         buf[writePos++] = v;
         continue;
@@ -66,9 +73,9 @@ static u32 prepare_idx_template(IndexBuffer& buf, GXPrimitive prim, u16 vtxCount
       buf[writePos++] = v;
     }
   } else if (prim == GX_TRIANGLESTRIP) {
-    const u32 indexCount = vtxCount <= 3 ? vtxCount : 3u + (static_cast<u32>(vtxCount) - 3u) * 3u;
+    const u32 indexCount = vtxCount < 3 ? 0u : (static_cast<u32>(vtxCount) - 2u) * 3u;
     buf.resize(indexCount);
-    for (u16 v = 0; v < vtxCount; ++v) {
+    for (u32 v = 0; indexCount != 0 && v < vtxCount; ++v) {
       if (v < 3) {
         buf[writePos++] = v;
         continue;
@@ -89,6 +96,13 @@ static u32 prepare_idx_template(IndexBuffer& buf, GXPrimitive prim, u16 vtxCount
     UNLIKELY FATAL("unsupported primitive type {}", static_cast<u32>(prim));
   CHECK(writePos == buf.size(), "index template size mismatch ({} != {})", writePos, buf.size());
   return static_cast<u32>(writePos);
+}
+
+// Empty/incomplete draws consume FIFO bytes but cannot produce a primitive.
+static bool has_complete_primitive(GXPrimitive prim, u16 count) {
+  if (prim == GX_POINTS) return count >= 1;
+  if (prim == GX_LINES || prim == GX_LINESTRIP) return count >= 2;
+  return count >= 3;
 }
 
 // GX FIFO opcodes - use CP_ prefix to avoid clashing with GXCommandList.h macros
@@ -552,6 +566,10 @@ void process(const u8* data, u32 size, bool bigEndian) {
       for (int i = GX_VA_POS; i <= GX_VA_TEX7; ++i) {
         g_gxState.arrays[i].cachedRange = {};
       }
+      // A merged draw retains its previous array uploads. Force a new draw so
+      // handle_draw_unmerged observes the invalidation and uploads fresh data.
+      // Pipeline configuration itself did not change.
+      g_gxState.stateDirty = true;
       break;
     }
 
@@ -1926,6 +1944,10 @@ static u32 calculate_last_vtx_size(GXVtxFmt fmt) {
 
   g_gxState.lastVtxFmt = fmt;
   g_gxState.lastVtxSize = vtxSize;
+  // The format is selected by the draw opcode, without a register write.
+  // Even equal-stride formats may decode bytes differently, so do not merge
+  // into a draw using the previous format's shader and uniform layout.
+  g_gxState.stateDirty = true;
 
   return vtxSize;
 }
@@ -2366,6 +2388,8 @@ bool submit_raw_draw(GXPrimitive prim, GXVtxFmt fmt, const uint8_t* vertices, ui
     return false;
   }
 
+  if (!has_complete_primitive(prim, vtxCount)) return true;
+
   // This entry point bypasses process(), so it owns the renderer lock itself.
   std::lock_guard gpuLock(aurora::renderer_gpu_mutex());
   if (model_array_hidden()) return true;
@@ -2414,7 +2438,7 @@ static bool handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
       return false;
     }
 
-  if (model_array_hidden()) {
+  if (!has_complete_primitive(prim, vtxCount) || model_array_hidden()) {
     pos += totalVtxBytes;
     return true;
   }
@@ -2436,9 +2460,12 @@ static bool handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
       // Only if the previous draw call was a single instance draw (no lines/points handling), and only into a draw
       // that resolved the same animated array: the merged whole renders through that draw's binding. Anything the
       // decision cache cannot vouch for (a command it was not recorded against) stays unmerged.
+      // Expanded lines/points have different vertex interpretation even with one instance.
+      // Triangle-list output has no restart index; index 65535 is usable.
+      // Overflow would address earlier vertices instead of the appended geometry.
       if (lastDraw != nullptr && prim != GX_LINES && prim != GX_LINESTRIP && prim != GX_POINTS &&
-          !lastDraw->uniformReplayLayout.vertexMotion.enabled &&
-          lastDraw->instanceCount == 1 &&
+          !lastDraw->uniformReplayLayout.vertexMotion.enabled && !lastDraw->expandedPrimitive &&
+          lastDraw->instanceCount == 1 && uint64_t(lastDraw->vtxCount) + vtxCount <= 65536u &&
           (nativeWheelArrays.empty() ||
            (nativeWheelLastDrawCommand == lastDraw && nativeWheelLastDecision == nativeWheel)))
         LIKELY {
@@ -2615,6 +2642,7 @@ static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, g
       .vtxCount = vtxCount,
       .indexCount = numIndices,
       .instanceCount = instanceCount,
+      .expandedPrimitive = prim == GX_LINES || prim == GX_LINESTRIP || prim == GX_POINTS,
       .bindGroups = bindGroups,
       .dstAlpha = pipelineState.dstAlpha,
       .screenRect = screen_rect(prim, fmt, vertices, vtxCount, vtxStride),

@@ -64,6 +64,7 @@ if (AURORA_ENABLE_GX)
   add_executable(gx_fifo_tests
     gx_fifo_test.cpp
     gx_test_stubs.cpp
+    renderer_regression_test.cpp
     stereo_replay_test.cpp
     stereo_interpolation_test.cpp
     stereo_mirror_test.cpp

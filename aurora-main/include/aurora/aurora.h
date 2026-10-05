@@ -295,12 +295,20 @@ typedef struct {
   bool xrHeadsetOnly;
 } AuroraConfig;
 
+typedef enum {
+  AURORA_INITIALIZATION_SUCCESS = 0,
+  AURORA_INITIALIZATION_GRAPHICS_UNAVAILABLE = 1,
+} AuroraInitializationStatus;
+
 typedef struct {
   AuroraBackend backend;
   const char* userPath;
   const char* cachePath;
   SDL_Window* window;
   AuroraWindowSize windowSize;
+  AuroraInitializationStatus initializationStatus;
+  // On failure, owned by SDL on the calling thread. Copy before another SDL call.
+  const char* initializationError;
 } AuroraInfo;
 
 AuroraInfo aurora_initialize(int argc, char* argv[], const AuroraConfig* config);
