@@ -86,19 +86,37 @@ inline bool CopyBootstrapFile(const std::filesystem::path& sourceRoot,
                               std::error_code& ec) {
     const auto source = sourceRoot / relativePath;
     const auto destination = destinationRoot / relativePath;
+    auto copyOptions = std::filesystem::copy_options::none;
     if (std::filesystem::exists(destination, ec)) {
-        return !ec;
+        if (ec) {
+            return false;
+        }
+        // Keep whatever the player has, except an empty file where the payload has content. WC24
+        // rejects a zero-length download or friend list outright and MKW reports that as a save
+        // error; since seeding only ran for missing files, such a file stayed broken for good.
+        const auto existingSize = std::filesystem::file_size(destination, ec);
+        if (ec) {
+            return false;
+        }
+        std::error_code sourceError;
+        const auto sourceSize = std::filesystem::file_size(source, sourceError);
+        if (existingSize != 0 || sourceError || sourceSize == 0) {
+            return true;
+        }
+        copyOptions = std::filesystem::copy_options::overwrite_existing;
+    } else if (ec) {
+        return false;
     }
 
     std::filesystem::create_directories(destination.parent_path(), ec);
     if (ec) {
         return false;
     }
-    std::filesystem::copy_file(source, destination, std::filesystem::copy_options::none, ec);
+    std::filesystem::copy_file(source, destination, copyOptions, ec);
     return !ec;
 }
 
-// Create these WC24 files only for a new profile; never overwrite user data.
+// Create these WC24 files for a new profile, or refill one left empty; never overwrite user data.
 constexpr std::string_view kBootstrapFiles[] = {
     "shared2/wc24/misc.bin",
     "shared2/wc24/nwc24dl.bin",
