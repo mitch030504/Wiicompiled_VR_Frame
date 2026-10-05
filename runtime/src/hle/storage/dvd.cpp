@@ -104,10 +104,15 @@ extern "C" void DVDInit_8015EA1C();
 extern "C" uint32_t g_dvdFstReservedBase;
 extern "C" uint32_t g_dvdFstReservedSize;
 
-// Byte-wise copy into guest RAM plus the DMA notification the GX caches need.
+// DVD DMA normally targets ordinary RAM. Keep scalar writes for executable
+// ranges so the translated-code write guard still sees every modified byte.
 static void CopyToGuestAsDma(uint32_t dest, const uint8_t* data, size_t size) {
-    for (size_t i = 0; i < size; ++i) {
-        Memory::Write8(dest + static_cast<uint32_t>(i), data[i]);
+    if (size != 0 && !RecompMod::ExecutableWriteGuardMayHit(dest, size)) {
+        std::memcpy(Memory::GetPointer(dest, size), data, size);
+    } else {
+        for (size_t i = 0; i < size; ++i) {
+            Memory::Write8(dest + static_cast<uint32_t>(i), data[i]);
+        }
     }
     GxNotifyGuestRamDmaWrite(dest, static_cast<uint32_t>(size));
 }
