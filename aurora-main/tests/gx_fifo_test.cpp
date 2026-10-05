@@ -1328,12 +1328,35 @@ TEST(TevRegisterLivenessContract, PacksOneUniformWhenBothHalvesNeedInitialValue)
   auto config = baseline;
   config.tevStages[0].colorPass.a = GX_CC_C0;
   config.tevStages[0].alphaPass.a = GX_CA_A0;
+  config.tevStages[0].colorPass.b = GX_CC_KONST;
+  config.tevStages[0].kcSel = GX_TEV_KCSEL_K0;
 
-  const auto baselineInfo = aurora::gx::build_shader_info(baseline);
   const auto info = aurora::gx::build_shader_info(config);
   EXPECT_TRUE(info.loadsTevRegRgb.test(GX_TEVREG0));
   EXPECT_TRUE(info.loadsTevRegAlpha.test(GX_TEVREG0));
-  EXPECT_EQ(info.uniformSize, baselineInfo.uniformSize + sizeof(aurora::Vec4<float>));
+  // The final allocation is alignment-rounded, so adding one register need
+  // not increase it. Verify actual packing with a distinct following K color.
+  const auto savedReg = g_gxState.colorRegs[GX_TEVREG0];
+  const auto savedKColor = g_gxState.kcolors[GX_KCOLOR0];
+  g_gxState.colorRegs[GX_TEVREG0] = {11.f, 22.f, 33.f, 44.f};
+  g_gxState.kcolors[GX_KCOLOR0] = {55.f, 66.f, 77.f, 88.f};
+  EXPECT_TRUE(info.sampledKColors.test(GX_KCOLOR0));
+  aurora::gfx::testing::reset_uniform_allocations();
+  aurora::gx::build_uniform(info, 0, {}, {}, false);
+  const auto expectedReg = g_gxState.colorRegs[GX_TEVREG0];
+  const auto expectedKColor = g_gxState.kcolors[GX_KCOLOR0];
+  g_gxState.colorRegs[GX_TEVREG0] = savedReg;
+  g_gxState.kcolors[GX_KCOLOR0] = savedKColor;
+  const auto& bytes = aurora::gfx::testing::uniform_allocation(0);
+  const auto* reg = reinterpret_cast<const uint8_t*>(&expectedReg);
+  const auto found = std::search(bytes.begin(), bytes.end(), reg, reg + sizeof(aurora::Vec4<float>));
+  ASSERT_NE(found, bytes.end());
+  const size_t offset = static_cast<size_t>(found - bytes.begin());
+  ASSERT_LE(offset + 2 * sizeof(aurora::Vec4<float>), bytes.size());
+  EXPECT_EQ(std::memcmp(bytes.data() + offset + sizeof(aurora::Vec4<float>), &expectedKColor,
+                        sizeof(aurora::Vec4<float>)),
+            0);
+  aurora::gfx::testing::reset_uniform_allocations();
 }
 
 // BP registers (direct FIFO writes, no dirty state flush needed)
