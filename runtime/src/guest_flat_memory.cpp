@@ -11,6 +11,7 @@
 #include <mutex>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 
 #include "memory.h"
@@ -61,8 +62,9 @@ constexpr size_t kAllocationGranularity = 0x10000;  // 64 KiB
 constexpr size_t kHostPageSize = 0x1000;
 
 // Only hosts that can expose a page larger than 4 KiB need to discover their
-// size at runtime; see RequiresCheckedAccess() in guest_flat_memory.h.
-#if !defined(MKW_GUEST_FLAT_FIXED_PAGE_SIZE)
+// size at runtime, or check it when the build assumes 4 KiB; see
+// RequiresCheckedAccess() in guest_flat_memory.h.
+#if !defined(MKW_GUEST_FLAT_FIXED_PAGE_SIZE) || defined(MKW_GUEST_FLAT_VERIFY_PAGE_SIZE)
 size_t HostPageSize()
 {
     const long size = sysconf(_SC_PAGESIZE);
@@ -521,6 +523,13 @@ void Initialize(const std::vector<RegionRequest>& regions) {
 
 #if !defined(MKW_GUEST_FLAT_FIXED_PAGE_SIZE)
     g_requiresCheckedAccess = HostPageSize() > kGuestPageSize;
+#elif defined(MKW_GUEST_FLAT_VERIFY_PAGE_SIZE)
+    if (HostPageSize() != kGuestPageSize) {
+        throw std::runtime_error(
+            "This is a Steam Frame build, which assumes the headset's 4 KiB memory pages, but this "
+            "kernel uses " + std::to_string(HostPageSize()) + "-byte pages. Build without "
+            "--headset steam_frame for this device.");
+    }
 #endif
 
     if (g_initialized) {
