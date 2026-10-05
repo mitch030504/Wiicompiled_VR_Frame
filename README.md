@@ -330,7 +330,11 @@ curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/op
     | bash -s -- --disc "/path/to/Mario Kart Wii.wbfs" --frame local --work-dir /run/media/steamos/<card>/wiicompiled-frame
 ```
 
-Leave out `--work-dir` to keep it in `~/wiicompiled-frame`. With 15 GB of memory the Frame runs three
+`--disc` is a path on the Frame, so the disc has to be there first. Copy the image over from the PC
+(`scp "Mario Kart Wii.wbfs" steamos@<frame-ip>:/run/media/steamos/<card>/`, about 3 GB for a WBFS), or
+point `--disc` at an extracted disc already on the Frame, such as `~/wiicompiled/disc` from an
+earlier install, which then stays where it is. Leave out `--work-dir` to keep it in
+`~/wiicompiled-frame`. With 15 GB of memory the Frame runs three
 compiles at once; it has less cooling than a PC, so keep it on its charger. The game then reads the
 disc straight from the work folder's `disc`. By hand, the
 steps under [Building by hand](#building-by-hand) work the same in a container started without
