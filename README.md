@@ -101,7 +101,7 @@ Everything it puts on the Frame is in your home folder, where it survives SteamO
 | Where | What |
 | --- | --- |
 | `~/devkit-game/WiiCompiled/` | the game |
-| `~/wiicompiled/disc/` | your extracted disc, about 4.5 GB (`--frame-disc` puts it elsewhere in your home folder or on the SD card, `/run/media/steamos/<card>/...`) |
+| `~/wiicompiled/disc/` | your extracted disc (`--frame-disc` puts it elsewhere in your home folder or on the SD card) |
 | `~/.local/share/WiiCompiled/` | `Config.toml`, saves and logs, written by the game itself |
 | Steam's library | the **WiiCompiled** shortcut, made through Valve's devkit tools in `~/devkit-utils` |
 
@@ -313,32 +313,18 @@ is open.
 
 ## Other ways to build
 
-**On the Frame itself.** SteamOS on the Frame (0.4.3, September 2026) comes with podman 5.5, set
-up for rootless containers with its storage in the home folder, so the install script runs there
-natively, with no emulation and nothing installed into the read-only system. Don't add tools to
-SteamOS with `pacman`: that means switching the read-only mode off, and the next update undoes it.
-The script checks for podman and stops with a pointer to building on a PC if an image lacks it.
-
-The first build needs about 20 GB in its work folder, and podman's storage
-(`~/.local/share/containers`) grows by about 1.5 GB for the build container. If the home folder is
-short of that (the script checks), put the work folder on the SD card, which SteamOS mounts under
-`/run/media/<user>/<card>` (on the Frame the user is `steamos`). Over SSH
-(`ssh steamos@<frame-ip>`) or in a Desktop Mode terminal:
+**On the Frame itself.** SteamOS includes podman, so the install script also runs on the Frame,
+natively and without installing anything into the read-only system. `--disc` is then a path on the
+Frame, so copy your disc image over first. If the home folder is short of space (the script checks),
+put the work folder on the SD card, which SteamOS mounts under `/run/media/<user>/<card>`. Over SSH
+or in a Desktop Mode terminal:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/openxr-work/Launcher/steam-frame-install.sh \
-    | bash -s -- --disc "/path/to/Mario Kart Wii.wbfs" --frame local --work-dir /run/media/steamos/<card>/wiicompiled-frame
+    | bash -s -- --disc "/path/to/Mario Kart Wii.wbfs" --frame local --work-dir /run/media/<user>/<card>/wiicompiled-frame
 ```
 
-`--disc` is a path on the Frame, so the disc has to be there first. Copy the image over from the PC
-(`scp "Mario Kart Wii.wbfs" steamos@<frame-ip>:/run/media/steamos/<card>/`, about 3 GB for a WBFS), or
-point `--disc` at an extracted disc already on the Frame, such as `~/wiicompiled/disc` from an
-earlier install, which then stays where it is. Leave out `--work-dir` to keep it in
-`~/wiicompiled-frame`. With 15 GB of memory the Frame runs three
-compiles at once; it has less cooling than a PC, so keep it on its charger. The game then reads the
-disc where it was extracted: the folder `--disc` named, or the work folder's `disc` for an image. By hand, the
-steps under [Building by hand](#building-by-hand) work the same in a container started without
-`--platform linux/arm64`, with `nodtool-linux-aarch64` in place of `nodtool-linux-x86_64`.
+The Frame has less memory and cooling than a PC, so keep it on its charger.
 
 **On a stronger machine** (a server, for example). The script works with Docker as well as podman,
 and runs much faster with more cores and memory. A machine that cannot reach the Frame builds
@@ -379,12 +365,9 @@ Unraid keeps `/usr/local/bin` in memory, so repeat this after a reboot.
   Vulkan hook and density map ABIs that Aurora compiles against.
 - **Headset only.** The game neither shows nor finishes rendering a desktop window, and is compiled
   for the Frame's Cortex-X4 cores (`-mcpu=cortex-x4`, overridable with `--cpu`).
-- **What it needs from SteamOS.** Dawn, SDL and the OpenXR loader are linked in, and Vulkan and the
-  OpenXR runtime are found at run time. From the system it takes only glibc, libstdc++, libgcc,
-  libpng and zlib, all part of SteamOS, and it is built against glibc symbols that SteamOS 0.4.3's
-  glibc 2.39 has (`ldd ~/devkit-game/WiiCompiled/WiiCompiled` lists them and flags anything
-  missing). Steam starts it in Steam Linux Runtime 4 (`SteamLinuxRuntime_4-arm64`), which brings
-  its own copies; started from a terminal it uses SteamOS's.
+- **What it needs from SteamOS.** Only glibc, libstdc++, libgcc, libpng and zlib; everything else is
+  linked in or loaded at run time. Steam starts it in Steam Linux Runtime 4, a terminal with
+  SteamOS's own libraries; `ldd` on the executable shows anything missing.
 - **Every refresh from the game.** The game draws 60 frames a second. When it handed SteamVR only
   those, SteamVR ran it at half rate and made up every other refresh itself, even with Motion
   Smoothing off. With `[vr] repeat_frames`, the pacing thread waits for the next frame until 1.5 ms
