@@ -15,8 +15,8 @@
 #
 # Options:
 #   --disc PATH       your clean PAL RMCP01 disc: an ISO, WBFS or RVZ image (or WIA, CISO, GCZ, NFS,
-#                     TGC), or an extracted disc folder holding sys/ and files/. Needed for the first
-#                     build only.
+#                     TGC), a .zip or .7z holding one, or an extracted disc folder holding sys/ and
+#                     files/. Needed for the first build only.
 #   --frame HOST      where to install: an SSH destination (steamos@<frame-ip>, or an ~/.ssh/config
 #                     host such as Frame Control's "frame"), or "local" when running on the Frame.
 #                     Without it the game is only built.
@@ -203,6 +203,74 @@ check_disc_id() {
     esac
 }
 
+get_nodtool() {
+    nodtool="$work_dir/nodtool-$nodtool_version"
+    if [[ ! -x "$nodtool" ]]; then
+        curl -fL --progress-bar -o "$nodtool.partial" \
+            "https://github.com/encounter/nod/releases/download/$nodtool_version/nodtool-linux-$host_arch"
+        chmod +x "$nodtool.partial"
+        mv "$nodtool.partial" "$nodtool"
+    fi
+}
+
+archive_kind() {
+    # Prints zip or 7z when $1 is such an archive, judged by its first bytes rather than its name.
+    case "$(od -An -tx1 -N6 "$1" | tr -d ' \n')" in
+        504b0304*|504b0506*|504b0708*) echo zip ;;
+        377abcaf271c) echo 7z ;;
+        *) return 1 ;;
+    esac
+}
+
+unpack_archive() {
+    # unpack_archive ARCHIVE DEST KIND, with whichever unpacker this machine has.
+    local archive=$1 dest=$2 kind=$3 tool
+    for tool in 7zz 7z 7za; do
+        if command -v "$tool" >/dev/null 2>&1; then
+            "$tool" x -y "-o$dest" "$archive" >/dev/null
+            return
+        fi
+    done
+    if command -v bsdtar >/dev/null 2>&1; then
+        bsdtar -xf "$archive" -C "$dest"
+        return
+    fi
+    if [[ "$kind" == zip ]] && command -v unzip >/dev/null 2>&1; then
+        unzip -qo "$archive" -d "$dest"
+        return
+    fi
+    if [[ "$kind" == zip ]] && command -v python3 >/dev/null 2>&1; then
+        python3 -m zipfile -e "$archive" "$dest"
+        return
+    fi
+    # Nothing here unpacks it: bsdtar in a container of this machine's own architecture.
+    note "no 7-Zip or bsdtar on this machine; unpacking in a container"
+    local platform=linux/amd64
+    [[ "$host_arch" == aarch64 ]] && platform=linux/arm64
+    "$runtime" run --rm --platform "$platform" -e OWNER="$(id -u):$(id -g)" \
+        -v "$archive:/archive:ro,z" -v "$dest:/out:z" "$image" bash -c '
+            apt-get update -qq && apt-get install -y -qq --no-install-recommends libarchive-tools >/dev/null &&
+            bsdtar -xf /archive -C /out && chown -R "$OWNER" /out'
+}
+
+find_disc_image() {
+    # Prints the disc image nodtool reads under $1, largest first, preferring Mario Kart Wii PAL;
+    # another disc is printed if there is no RMCP01, so the ID check names what it is.
+    local file id first=""
+    while IFS= read -r -d '' file; do
+        id=$("$nodtool" --no-color info "$file" 2>/dev/null |
+            sed -n 's/^Game ID: *\([A-Z0-9]\{6\}\).*/\1/p' | head -n 1) || true
+        [[ -n "$id" ]] || continue
+        if [[ "$id" == RMCP01 ]]; then
+            printf '%s\n' "$file"
+            return 0
+        fi
+        [[ -n "$first" ]] || first=$file
+    done < <(find "$1" -type f -printf '%s\t%p\0' | sort -zrn | cut -zf2-)
+    [[ -n "$first" ]] || return 1
+    printf '%s\n' "$first"
+}
+
 disc_dir="$work_dir/disc"
 if [[ -n "$disc" ]]; then
     [[ -e "$disc" ]] || fail "no disc at $disc"
@@ -220,20 +288,31 @@ if [[ -n "$disc" ]]; then
         [[ -f "$disc_dir/sys/main.dol" && -f "$disc_dir/files/rel/StaticR.rel" ]] ||
             fail "$disc is not an extracted disc: it needs sys/main.dol and files/rel/StaticR.rel"
     elif [[ ! -f "$disc_dir/sys/main.dol" ]]; then
-        say "Extracting your disc (a minute or two)"
-        nodtool="$work_dir/nodtool-$nodtool_version"
-        if [[ ! -x "$nodtool" ]]; then
-            curl -fL --progress-bar -o "$nodtool.partial" \
-                "https://github.com/encounter/nod/releases/download/$nodtool_version/nodtool-linux-$host_arch"
-            chmod +x "$nodtool.partial"
-            mv "$nodtool.partial" "$nodtool"
+        get_nodtool
+        disc_image=$disc
+        if kind=$(archive_kind "$disc"); then
+            say "Unpacking the $kind archive (a minute or two)"
+            rm -rf "$work_dir/archive"
+            mkdir -p "$work_dir/archive"
+            unpack_archive "$disc" "$work_dir/archive" "$kind" || {
+                rm -rf "$work_dir/archive"
+                fail "could not unpack $disc (a damaged or password-protected archive?)"
+            }
+            disc_image=$(find_disc_image "$work_dir/archive") || {
+                rm -rf "$work_dir/archive"
+                fail "there is no disc image nodtool reads inside $disc. It reads ISO, WBFS, RVZ, WIA,
+    CISO, GCZ, NFS and TGC images; an archive inside the archive has to be unpacked by hand."
+            }
+            note "found ${disc_image#"$work_dir/archive/"} inside"
         fi
+        say "Extracting your disc (a minute or two)"
         rm -rf "$disc_dir.partial"
         # nodtool tells the format from the file's contents, whatever it is named.
-        "$nodtool" extract -q "$disc" "$disc_dir.partial" ||
+        "$nodtool" extract -q "$disc_image" "$disc_dir.partial" ||
             fail "nodtool could not read $disc. It reads ISO, WBFS, RVZ, WIA, CISO, GCZ, NFS and TGC
-    images; unpack a .zip or .7z first."
+    images, and those inside a .zip or .7z."
         mv "$disc_dir.partial" "$disc_dir"
+        rm -rf "$work_dir/archive"
     fi
 fi
 if [[ ! -f "$disc_dir/sys/main.dol" || ! -f "$disc_dir/files/rel/StaticR.rel" ]]; then
