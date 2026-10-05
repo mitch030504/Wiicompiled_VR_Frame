@@ -97,6 +97,22 @@ curl -fsSL https://raw.githubusercontent.com/mitch030504/Wiicompiled_VR_Frame/op
     | bash -s -- --disc "/path/to/Mario Kart Wii.wbfs" --frame local
 ```
 
+`--disc` accepts any of these:
+
+| Extension | What it is |
+| --- | --- |
+| `.iso` | A plain disc image |
+| `.wbfs` | Wii Backup File System image |
+| `.rvz` | Dolphin's compressed image |
+| `.wia` | Wii ISO Archive |
+| `.ciso` | Compact ISO |
+| `.gcz` | Dolphin's older compressed image |
+| `.nfs` | A Wii game image from a Wii U |
+| `.zip`, `.7z` | An archive holding one of the images above |
+| a folder | An extracted disc, holding `sys/` and `files/` |
+
+The script reads the format from the file's contents, so a renamed file works too.
+
 The script checks that the disc is PAL `RMCP01` before building, and stops on any other. If it
 stops for any reason, the same command picks up where it left off. From a PC, it asks for the
 Frame's password when it gets there. Steam must be running on the Frame for the last step, adding
