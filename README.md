@@ -31,7 +31,9 @@ C++ and compiled for the Frame's ARM64 CPU, and it renders through SteamVR's Ope
 
 ## Quick start
 
-This is the whole way from your disc to playing in the headset, building on an x86_64 Linux PC. The
+This is the whole way from a [release](https://github.com/mitch030504/Wiicompiled_VR_Frame/releases)
+and your disc to playing in the headset, building on an x86_64 Linux PC. Releases are source only:
+the game is always built from your own disc, so there is nothing ready-built to download. The
 first build takes a few hours, most of it compiling Dawn under emulation; later builds reuse it.
 [Other ways to build](#other-ways-to-build) covers a faster machine and the Frame itself.
 
@@ -60,11 +62,15 @@ The last command must print `aarch64`. On Debian or Ubuntu install `podman qemu-
 binfmt-support` instead. If podman complains about subordinate ids, run
 `sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 $USER` and log in again.
 
-### 2. Get the code and extract your disc
+### 2. Download the release and extract your disc
+
+Take the newest release from the [Releases](https://github.com/mitch030504/Wiicompiled_VR_Frame/releases)
+page; the commands use `frame-beta-1`, so put the newest release's tag in its place:
 
 ```bash
-mkdir -p ~/wiicompiled; cd ~/wiicompiled
-git clone https://github.com/mitch030504/Wiicompiled_VR_Frame.git
+mkdir -p ~/wiicompiled/Wiicompiled_VR_Frame; cd ~/wiicompiled
+curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-1.tar.gz \
+    | tar -xz --strip-components=1 -C Wiicompiled_VR_Frame
 curl -fL -o nodtool https://github.com/encounter/nod/releases/download/v2.0.0-alpha.10/nodtool-linux-x86_64
 chmod +x nodtool
 ./nodtool extract "/path/to/Mario Kart Wii.wbfs" disc-extract
@@ -134,17 +140,30 @@ shoulder button, go to the **VR** tab and set the [recommended settings](#recomm
 
 ### Updating
 
-Pull the new code, rebuild, and replace only the executable. Copying to a new name and moving it
-into place works even while an old copy is open:
+When a new release comes out, put its changed files over the old source, rebuild, and replace only
+the executable. `rsync -c` copies just the files whose content changed and stamps them with the
+current time, so the build recompiles exactly those. Unpacking over the source would restore each
+file's commit date, which can be older than the last build, and changes would be skipped. Your
+`Assets/` and build folders stay. Install `rsync` if your system lacks it, and put the new release's
+tag in place of `frame-beta-2`:
 
 ```bash
-cd ~/wiicompiled/Wiicompiled_VR_Frame && git pull
+cd ~/wiicompiled
+mkdir -p release-new
+curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-2.tar.gz \
+    | tar -xz --strip-components=1 -C release-new
+rsync -rcE release-new/ Wiicompiled_VR_Frame/
+rm -rf release-new
 podman start -ai wiicompiled-frame
 # in the container: cd /work/Wiicompiled_VR_Frame; T=/work/tools/toolchain-aarch64/bin, then the
-# build-dawn-linux.sh and local-build.sh lines from step 3 (only what changed is rebuilt), then exit
+# build-dawn-linux.sh and local-build.sh lines from step 3, then exit. Dawn only rebuilds when the
+# release changed its patches (the release notes say so); otherwise both finish quickly.
 scp ~/wiicompiled/out/WiiCompiled frame:devkit-game/WiiCompiled/WiiCompiled.new
 ssh frame 'cd ~/devkit-game/WiiCompiled && chmod 755 WiiCompiled.new && mv -f WiiCompiled.new WiiCompiled'
 ```
+
+The executable is copied under a new name and moved into place, which works even while an old copy
+is open.
 
 ## Recommended settings
 
@@ -228,11 +247,13 @@ running the same command again.
 
 ## Other ways to build
 
-**On the Frame itself.** SteamOS's root file system is read-only, but it ships podman. Over SSH:
+**On the Frame itself.** SteamOS's root file system is read-only, but it ships podman. Over SSH,
+with the newest release's tag:
 
 ```bash
-mkdir -p ~/wiicompiled && cd ~/wiicompiled
-git clone https://github.com/mitch030504/Wiicompiled_VR_Frame.git
+mkdir -p ~/wiicompiled/Wiicompiled_VR_Frame && cd ~/wiicompiled
+curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-1.tar.gz \
+    | tar -xz --strip-components=1 -C Wiicompiled_VR_Frame
 podman run -it --name wiicompiled-frame -v ~/wiicompiled:/work:Z docker.io/library/debian:trixie bash
 ```
 
