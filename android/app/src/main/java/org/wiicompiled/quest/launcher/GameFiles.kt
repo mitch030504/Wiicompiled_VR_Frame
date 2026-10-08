@@ -1,13 +1,12 @@
 package org.wiicompiled.quest.launcher
 
-import android.util.Log
+import android.content.Context
 import java.io.File
+import org.wiicompiled.quest.GameStorage
 import org.wiicompiled.quest.BuildConfig
 
 /** Checks and swaps shared by every [GameSetup] task. */
 object GameFiles {
-
-    private const val TAG = "WiiCompiledLauncher"
 
     val checks = DiscChecks(BuildConfig.DISC_GAME_ID, BuildConfig.DISC_DOL_SHA256, BuildConfig.DISC_REL_SHA256)
 
@@ -28,22 +27,17 @@ object GameFiles {
      * Moves [staging] to [destination], keeping the old destination until the new one is in
      * place. Null on success, otherwise the message to show.
      */
-    fun replace(destination: File, staging: File): String? {
-        val replaced = File(destination.parentFile, "${destination.name}.replaced")
-        replaced.deleteRecursively()
-        if (destination.exists() && !destination.renameTo(replaced)) {
-            return "The existing ${destination.name} folder could not be replaced. Remove it, for example with " +
-                "adb shell rm -r ${destination.absolutePath}, and try again."
+    fun replace(destination: File, staging: File): String? = DirectoryReplacement.replaceAll(
+        listOf(destination to staging), File(destination.parentFile, ".${destination.name}.replacement"),
+    )
+
+    fun recover(context: Context) {
+        val games = File(context.filesDir, "game")
+        DirectoryReplacement.recover(File(games, ".import-transaction"))
+        for (parent in listOf(games, GameStorage.gameRoot(context))) {
+            parent.listFiles { file -> file.name.startsWith(".") && file.name.endsWith(".replacement") }
+                ?.forEach { DirectoryReplacement.recover(it) }
         }
-        if (!staging.renameTo(destination)) {
-            replaced.renameTo(destination)
-            return "The new files could not be moved into ${destination.absolutePath}."
-        }
-        // The new copy is in place; an old one that will not delete only costs space.
-        if (replaced.exists() && !replaced.deleteRecursively()) {
-            Log.w(TAG, "Could not remove ${replaced.absolutePath}")
-        }
-        return null
     }
 
     fun gigabytes(bytes: Long) = "%.1f GB".format(bytes / 1_000_000_000.0)

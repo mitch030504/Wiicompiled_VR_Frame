@@ -107,6 +107,7 @@ object GameSetup {
         }
         val finishing = { publish(State.Finishing(task)) }
         try {
+            GameFiles.recover(context)
             val failure = if (task == Task.BuildGame) {
                 val reporter = GameBuild.Reporter { permille, step, done, total ->
                     publish(State.Working(task, permille.toLong(), 1000, step, done, total))

@@ -36,6 +36,23 @@ public class RetroWfcPayloadLoweringTests
     }
 
     [Fact]
+    public void AlteredProductionPayloadFailsSignatureValidation()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "payload-validation-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var payload = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory,
+                "TestAssets", "RetroWfcPayload", "binary", "payload.RMCPD00.bin"));
+            payload[^1] ^= 1;
+            Directory.CreateDirectory(Path.Combine(root, "binary"));
+            File.WriteAllBytes(Path.Combine(root, "binary", "payload.RMCPD00.bin"), payload);
+            Assert.Throws<InvalidDataException>(() =>
+                WiiCompiled.Setup.Common.RetroWfcPayload.ValidateStagedRetroWfcPayloadDirectory(root));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public void ProductionPayloadValidatesAndTranslatesEverySupportedPatch()
     {
         var payloadRoot = Path.Combine(

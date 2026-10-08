@@ -30,37 +30,58 @@ internal static class DiscTool
                 "Only your own legally-owned copy of that exact game/region can be used.");
         }
 
-        // Extracted straight into Assets/DATA (kept, not a scratch dir) - the runtime reads course/
-        // texture/audio data from this directory live via [paths] dvd_root, not just at translation
-        // time, so it has to survive past this install (see Program.cs, which points dvd_root here).
         reporter.Progress(InstallStages.ExtractDisc, "Extracting the disc image", 4);
-        var dataDir = Path.Combine(assetsDirectory, "DATA");
-        if (Directory.Exists(dataDir)) Directory.Delete(dataDir, recursive: true);
-        await RunExtractAsync(nodTool, isoPath, dataDir, cancellationToken);
-
-        var dolPath = Path.Combine(dataDir, "sys", "main.dol");
-        var relPath = Path.Combine(dataDir, "files", "rel", "StaticR.rel");
-        if (!File.Exists(dolPath)) throw new FileNotFoundException("nodtool did not produce main.dol", dolPath);
-        if (!File.Exists(relPath)) throw new FileNotFoundException("nodtool did not produce StaticR.rel", relPath);
-
-        var dolSha = Sha256Of(dolPath);
-        var relSha = Sha256Of(relPath);
-        if (!string.Equals(dolSha, manifest.DolSha256, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                $"main.dol sha256 mismatch: expected {manifest.DolSha256}, got {dolSha}. " +
-                "This disc revision does not match what this project's manifest is pinned to.");
-        }
-        if (!string.Equals(relSha, manifest.RelSha256, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                $"StaticR.rel sha256 mismatch: expected {manifest.RelSha256}, got {relSha}. " +
-                "This disc revision does not match what this project's manifest is pinned to.");
-        }
-
         Directory.CreateDirectory(assetsDirectory);
-        File.Copy(dolPath, Path.Combine(assetsDirectory, "main.dol"), overwrite: true);
-        File.Copy(relPath, Path.Combine(assetsDirectory, "StaticR.rel"), overwrite: true);
+        var dataDir = Path.Combine(assetsDirectory, "DATA");
+        var backup = dataDir + ".replaced";
+        if (!Directory.Exists(dataDir) && Directory.Exists(backup)) Directory.Move(backup, dataDir);
+        if (Directory.Exists(backup)) Directory.Delete(backup, recursive: true);
+        var staging = dataDir + ".extracting";
+        if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+        try
+        {
+            await RunExtractAsync(nodTool, isoPath, staging, cancellationToken);
+            var dolPath = Path.Combine(staging, "sys", "main.dol");
+            var relPath = Path.Combine(staging, "files", "rel", "StaticR.rel");
+            if (!File.Exists(dolPath)) throw new FileNotFoundException("nodtool did not produce main.dol", dolPath);
+            if (!File.Exists(relPath)) throw new FileNotFoundException("nodtool did not produce StaticR.rel", relPath);
+
+            var dolSha = Sha256Of(dolPath);
+            var relSha = Sha256Of(relPath);
+            if (!string.Equals(dolSha, manifest.DolSha256, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"main.dol sha256 mismatch: expected {manifest.DolSha256}, got {dolSha}. " +
+                    "This disc revision does not match what this project's manifest is pinned to.");
+            }
+            if (!string.Equals(relSha, manifest.RelSha256, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"StaticR.rel sha256 mismatch: expected {manifest.RelSha256}, got {relSha}. " +
+                    "This disc revision does not match what this project's manifest is pinned to.");
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Directory.Exists(dataDir)) Directory.Move(dataDir, backup);
+            try
+            {
+                Directory.Move(staging, dataDir);
+            }
+            catch
+            {
+                if (Directory.Exists(backup)) Directory.Move(backup, dataDir);
+                throw;
+            }
+            FileSystemUtilities.WriteAtomic(Path.Combine(assetsDirectory, "main.dol"),
+                File.ReadAllBytes(Path.Combine(dataDir, "sys", "main.dol")));
+            FileSystemUtilities.WriteAtomic(Path.Combine(assetsDirectory, "StaticR.rel"),
+                File.ReadAllBytes(Path.Combine(dataDir, "files", "rel", "StaticR.rel")));
+        }
+        finally
+        {
+            if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+        }
+        if (Directory.Exists(backup)) Directory.Delete(backup, recursive: true);
         reporter.Progress(InstallStages.ExtractDisc, "Disc validated and extracted", 6);
     }
 
@@ -75,9 +96,20 @@ internal static class DiscTool
         };
         using var process = System.Diagnostics.Process.Start(startInfo)
             ?? throw new InvalidOperationException($"Failed to start {nodTool}.");
-        var stdout = await process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderr = await process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(CancellationToken.None);
+            throw;
+        }
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
         if (process.ExitCode != 0)
         {
             throw new InvalidOperationException(
@@ -104,9 +136,20 @@ internal static class DiscTool
 
         using var process = System.Diagnostics.Process.Start(startInfo)
             ?? throw new InvalidOperationException($"Failed to start {nodTool}.");
-        var stdout = await process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderr = await process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(CancellationToken.None);
+            throw;
+        }
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
         if (process.ExitCode != 0)
         {
             throw new InvalidOperationException(

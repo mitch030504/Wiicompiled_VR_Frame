@@ -84,3 +84,6 @@ output.txt
 /android/app/.cxx/
 /android/app/libs/*.aar
 /android/.runs/
+
+# Python regression checks
+__pycache__/

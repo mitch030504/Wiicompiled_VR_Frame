@@ -104,6 +104,11 @@ status() {
 # how its result gets seen; a game still open shows the result in its Updates tab.
 game_running() { pgrep -f "devkit-game/($game_id|RetroRewind)/" >/dev/null 2>&1; }
 relaunch() {
+    if [[ -n "${install_lock:-}" ]]; then
+        flock -u "$install_lock"
+        exec {install_lock}>&-
+        unset install_lock
+    fi
     [[ -n "$steam_game_id" ]] || return 0
     command -v steam >/dev/null 2>&1 || return 0
     if game_running; then return 0; fi
@@ -154,6 +159,11 @@ source_given=$source_dir
 mkdir -p "$work_dir"
 work_dir=$(cd "$work_dir" && pwd)
 
+command -v flock >/dev/null || fail "flock is required (install util-linux)."
+exec {install_lock}>"$work_dir/.install.lock"
+flock -n "$install_lock" || fail "Another install or update is using $work_dir. Wait for it to finish."
+command -v python3 >/dev/null || fail "Python 3 is required for installation."
+
 # The game's Update button leaves a request file; the service that runs this script moves it here.
 if [[ -n "${WIICOMPILED_UPDATE_REQUEST:-}" && -f "$WIICOMPILED_UPDATE_REQUEST" ]]; then
     steam_game_id=$(sed -n 's/^steam_game_id=\([0-9]*\)$/\1/p' "$WIICOMPILED_UPDATE_REQUEST" | head -n 1)
@@ -174,6 +184,97 @@ if [[ "$mode" != install && -f "$work_dir/install.conf" ]]; then
     jobs_given=$jobs
     source_given=$source_dir
 fi
+frame_files() {
+    python3 - "$@" <<'FRAME_FILES_PY'
+import filecmp
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import sys
+import tempfile
+
+
+def atomic_write(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=path.name + '.', dir=path.parent)
+    try:
+        with os.fdopen(descriptor, 'w', encoding='utf-8') as output:
+            output.write(text)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def set_path(key, value):
+    if key not in ('dvd_root', 'retro_rewind_root'):
+        raise ValueError('Unknown runtime path key')
+    config = Path.home() / '.local/share/WiiCompiled/Config.toml'
+    value = os.path.expanduser(value)
+    if not os.path.isabs(value):
+        value = str(Path.home() / value)
+    lines = config.read_text(encoding='utf-8').splitlines(keepends=True) if config.exists() else []
+    # JSON strings use the escaping needed by TOML basic strings for filesystem paths.
+    setting = key + ' = ' + json.dumps(value, ensure_ascii=False) + '\n'
+    start = next((i for i, line in enumerate(lines) if re.fullmatch(r"\s*\[\s*[\"']?paths[\"']?\s*\]\s*(?:#.*)?", line.strip())), None)
+    if start is None:
+        lines += ['\n[paths]\n', setting]
+    else:
+        end = next((i for i in range(start + 1, len(lines)) if lines[i].lstrip().startswith('[')), len(lines))
+        matches = [i for i in range(start + 1, end) if re.match(r"\s*[\"']?" + key + r"[\"']?\s*=", lines[i])]
+        for i in reversed(matches):
+            del lines[i]
+        lines.insert(start + 1, setting)
+    atomic_write(config, ''.join(line if line.endswith('\n') else line + '\n' for line in lines))
+
+
+def sync_source(source, destination):
+    source, destination = Path(source), Path(destination)
+    manifest = destination / '.release-files'
+    old = manifest.read_text(encoding='utf-8').splitlines() if manifest.exists() else []
+    current = sorted(str(path.relative_to(source)) for path in source.rglob('*') if path.is_file() or path.is_symlink())
+    current_set = set(current)
+    for name in old:
+        relative = Path(name)
+        if relative.is_absolute() or '..' in relative.parts or not relative.parts:
+            raise ValueError('Invalid release-owned path: ' + name)
+        if name not in current_set:
+            target = destination / relative
+            if target.is_symlink() or target.is_file():
+                target.unlink()
+    for name in current:
+        incoming, target = source / name, destination / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if incoming.is_symlink():
+            if target.is_symlink() and os.readlink(target) == os.readlink(incoming):
+                continue
+            if target.exists() or target.is_symlink():
+                target.unlink()
+            target.symlink_to(os.readlink(incoming))
+        elif target.is_symlink() or not target.is_file() or not filecmp.cmp(incoming, target, shallow=False):
+            if target.is_symlink():
+                target.unlink()
+            shutil.copyfile(incoming, target)
+            shutil.copymode(incoming, target)
+        else:
+            shutil.copymode(incoming, target)
+    atomic_write(manifest, '\n'.join(current) + '\n')
+
+
+if __name__ == '__main__':
+    if sys.argv[1] == 'config':
+        set_path(*sys.argv[2:])
+    elif sys.argv[1] == 'sync':
+        sync_source(*sys.argv[2:])
+    else:
+        raise ValueError('Unknown file operation')
+FRAME_FILES_PY
+}
+
 save_settings() {
     cat > "$work_dir/install.conf" <<EOF
 # Written by steam-frame-install.sh after each install: the options --update reuses.
@@ -193,7 +294,13 @@ EOF
 ssh_opts=(-o ControlMaster=auto -o "ControlPath=${XDG_RUNTIME_DIR:-/tmp}/wiicompiled-ssh-%C" -o ControlPersist=600)
 on_frame() {
     # Runs a bash script, given on stdin, on the Frame; its arguments follow.
-    if [[ "$frame" == local ]]; then bash -s -- "$@"; else ssh "${ssh_opts[@]}" "$frame" bash -s -- "$@"; fi
+    if [[ "$frame" == local ]]; then
+        bash -s -- "$@"
+    else
+        local arguments
+        printf -v arguments ' %q' "$@"
+        ssh "${ssh_opts[@]}" "$frame" "bash -s --$arguments"
+    fi
 }
 read_on_frame() {
     # Prints the contents of $1 on the Frame, with its whitespace removed, or nothing.
@@ -364,20 +471,14 @@ else
         curl -fL --progress-bar "https://github.com/$repo/archive/refs/tags/$release.tar.gz" |
             tar -xz --strip-components=1 -C "$work_dir/source-new" ||
             fail "could not download release $release; the Releases page on github.com/$repo lists them"
-        # Only files whose content changed are copied, stamped with the current time, so the build
-        # recompiles exactly those; the release's own file dates can be older than the last build.
-        if command -v rsync >/dev/null 2>&1; then
-            rsync -rcE "$work_dir/source-new/" "$source_dir/"
-        else
-            (cd "$work_dir/source-new" && find . -type f -print0) |
-                while IFS= read -r -d '' file; do
-                    if ! cmp -s "$work_dir/source-new/$file" "$source_dir/$file"; then
-                        mkdir -p "$source_dir/$(dirname "$file")"
-                        cp "$work_dir/source-new/$file" "$source_dir/$file"
-                        touch "$source_dir/$file"
-                    fi
-                done
+        # Old installs have no ownership manifest; recover it from their exact release.
+        if [[ ! -f "$source_dir/.release-files" && -n "$have" ]]; then
+            curl -fL --progress-bar "https://github.com/$repo/archive/refs/tags/$have.tar.gz" |
+                tar -tz | sed -e 's@^[^/]*/@@' -e '/\/$/d' -e '/^$/d' > "$source_dir/.release-files.partial" ||
+                fail "could not recover the previous release's file list; keeping the source untouched"
+            mv "$source_dir/.release-files.partial" "$source_dir/.release-files"
         fi
+        frame_files sync "$work_dir/source-new" "$source_dir"
         rm -rf "$work_dir/source-new"
         printf '%s\n' "$release" > "$source_dir/.release-tag"
     fi
@@ -816,38 +917,18 @@ EOF
 rm -rf "$d" && mv "$d.partial" "$d"
 EOF
     fi
-    note "pointing Retro Rewind at its pack"
-    on_frame "$frame_pack_path" <<'EOF'
-[[ "$1" = /* ]] && d=$1 || d="$HOME/$1"
-config="$HOME/.local/share/WiiCompiled/Config.toml"
-mkdir -p "$(dirname "$config")"
-if [[ ! -f "$config" ]]; then
-    printf '[paths]\nretro_rewind_root = "%s"\n' "$d" > "$config"
-elif ! grep -q '^retro_rewind_root *=' "$config"; then
-    if grep -q '^\[paths\]' "$config"; then
-        sed -i "/^\[paths\]/a retro_rewind_root = \"$d\"" "$config"
-    else
-        printf '\n[paths]\nretro_rewind_root = "%s"\n' "$d" >> "$config"
-    fi
-fi
-EOF
 fi
 
-note "pointing the game at the disc"
-on_frame "$frame_disc_path" <<'EOF'
-[[ "$1" = /* ]] && d=$1 || d="$HOME/$1"
-config="$HOME/.local/share/WiiCompiled/Config.toml"
-mkdir -p "$(dirname "$config")"
-if [[ ! -f "$config" ]]; then
-    printf '[paths]\ndvd_root = "%s"\n' "$d" > "$config"
-elif ! grep -q '^dvd_root *=' "$config"; then
-    if grep -q '^\[paths\]' "$config"; then
-        sed -i "/^\[paths\]/a dvd_root = \"$d\"" "$config"
-    else
-        printf '\n[paths]\ndvd_root = "%s"\n' "$d" >> "$config"
-    fi
+set_frame_path() {
+    { declare -f frame_files; printf '%s\n' 'frame_files "$@"'; } | on_frame config "$1" "$2"
+}
+
+if (( retro_rewind )); then
+    note "pointing Retro Rewind at its pack"
+    set_frame_path retro_rewind_root "$frame_pack_path"
 fi
-EOF
+note "pointing the game at the disc"
+set_frame_path dvd_root "$frame_disc_path"
 
 # Steam's library: through Valve's devkit tools when Frame Control or the Devkit Client put them on
 # the Frame, as a Steam Linux Runtime ARM64 title (Steam starts an ARM64 program natively).

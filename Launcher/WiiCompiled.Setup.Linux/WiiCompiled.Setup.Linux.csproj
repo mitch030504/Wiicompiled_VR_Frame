@@ -15,6 +15,7 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Translator.Tests" />
     <ProjectReference Include="..\WiiCompiled.Setup.Common\WiiCompiled.Setup.Common.csproj" />
   </ItemGroup>
 </Project>

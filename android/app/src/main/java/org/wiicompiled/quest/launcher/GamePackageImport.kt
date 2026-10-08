@@ -50,6 +50,12 @@ object GamePackageImport {
         val libraryStaging = File(context.filesDir, "game/.importing")
         val dataStaging = File(gameRoot, "DATA.importing")
         val modStaging = File(gameRoot, "${GameStorage.MOD_DIRECTORY}.importing")
+        val journal = File(libraryStaging.parentFile, ".import-transaction")
+        try {
+            DirectoryReplacement.recover(journal)
+        } catch (failure: Exception) {
+            return "Cannot recover the previous import: ${failure.message}"
+        }
         for (staging in listOf(libraryStaging, dataStaging, modStaging)) staging.deleteRecursively()
         try {
             libraryStaging.mkdirs()
@@ -127,20 +133,21 @@ object GamePackageImport {
             }
 
             File(libraryStaging, GameLibrary.MANIFEST_NAME).writeText(manifestText!!)
-            if (hasData) {
-                GameFiles.replace(GameStorage.discDirectory(context), dataStaging)?.let { return it }
-            }
-            if (hasMod) {
-                GameFiles.replace(GameStorage.modDirectory(context), modStaging)?.let { return it }
-            }
             val libraryDir = GameLibrary.directory(context, profile)
             libraryDir.parentFile?.mkdirs()
-            GameFiles.replace(libraryDir, libraryStaging)?.let { return it }
+            val replacements = buildList {
+                if (hasData) add(GameStorage.discDirectory(context) to dataStaging)
+                if (hasMod) add(GameStorage.modDirectory(context) to modStaging)
+                add(libraryDir to libraryStaging)
+            }
+            DirectoryReplacement.replaceAll(replacements, journal)?.let { return it }
             Log.i(TAG, "Imported ${profile.id} built by ${manifestJson.optString("builtBy")} at ${manifestJson.optString("builtAt")}")
             GameProfile.select(context, profile)
             return null
         } finally {
-            for (staging in listOf(libraryStaging, dataStaging, modStaging)) staging.deleteRecursively()
+            if (!journal.exists()) {
+                for (staging in listOf(libraryStaging, dataStaging, modStaging)) staging.deleteRecursively()
+            }
         }
     }
 

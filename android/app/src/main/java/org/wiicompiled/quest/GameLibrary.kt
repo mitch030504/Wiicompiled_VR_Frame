@@ -46,6 +46,13 @@ object GameLibrary {
     }
 
     fun status(context: Context, profile: GameProfile = GameProfile.selected(context)): Status {
+        // A killed publication must be recovered by setup before either process loads the game.
+        val games = File(context.filesDir, "game")
+        if (File(games, ".import-transaction").exists() ||
+            File(games, ".${profile.id}.replacement").exists() ||
+            File(GameStorage.gameRoot(context), ".${GameStorage.DISC_DIRECTORY}.replacement").exists() ||
+            profile.modPack && File(GameStorage.gameRoot(context), ".${GameStorage.MOD_DIRECTORY}.replacement").exists()
+        ) return Status.Missing
         val manifest = manifest(context, profile)
         if (manifest == null || !library(context, profile).isFile) {
             return Status.Missing

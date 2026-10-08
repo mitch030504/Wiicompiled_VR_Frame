@@ -12,7 +12,7 @@ on:
       tag:
         description: Release tag, frame-<something>; docs/releases/<tag>.md holds its notes
         required: true
-        default: frame-beta-2
+        default: frame-beta-4
 permissions:
   contents: write
 jobs:

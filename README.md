@@ -35,7 +35,7 @@ and drawn through SteamVR.
 ## Quick start
 
 One script takes you from your disc to the game in your Steam library. It downloads the newest
-[release](https://github.com/mitch030504/Wiicompiled_VR_Frame/releases) (currently `frame-beta-3`),
+[release](https://github.com/mitch030504/Wiicompiled_VR_Frame/releases) (currently `frame-beta-4`),
 extracts your disc, builds the game in an ARM64 container, installs it on the Frame and adds it to
 Steam. Releases hold only source code: the game is always built from your own disc.
 
@@ -59,8 +59,8 @@ Later builds reuse what the first one built, so updates usually take minutes.
   image, inside a `.zip` or `.7z` if you like, or as an extracted folder;
 - about 20 GB free where the build goes (`~/wiicompiled-frame`, or another folder with
   `--work-dir`);
-- to build on a PC: Linux on x86_64 or ARM64 with 16 GB of memory or more, on the same network as
-  the Frame.
+- to build on a PC: Linux on x86_64 or ARM64 with 16 GB of memory or more, Python 3 and
+  `flock` (from util-linux), on the same network as the Frame.
 
 > [!NOTE]
 > Nobody here will tell you where to get the game, and links to game files are not tolerated.
@@ -310,13 +310,13 @@ Unraid keeps `/usr/local/bin` in memory, so repeat this after a reboot.
 
 These are the steps the install script runs, for when you want to see or change one. Set up the
 container as in [Quick start](#1-set-up-the-container-pc-only) first. The commands use
-`frame-beta-3`; put the newest release's tag in its place.
+`frame-beta-4`; put the newest release's tag in its place.
 
 #### 1. Download the release and extract your disc
 
 ```bash
 mkdir -p ~/wiicompiled/Wiicompiled_VR_Frame; cd ~/wiicompiled
-curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-3.tar.gz \
+curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-4.tar.gz \
     | tar -xz --strip-components=1 -C Wiicompiled_VR_Frame
 curl -fL -o nodtool https://github.com/encounter/nod/releases/download/v2.0.0-alpha.10/nodtool-linux-x86_64
 chmod +x nodtool
@@ -393,7 +393,7 @@ older commit date, and changes could be skipped. Your `Assets/` and build folder
 ```bash
 cd ~/wiicompiled
 mkdir -p release-new
-curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-3.tar.gz \
+curl -fL https://github.com/mitch030504/Wiicompiled_VR_Frame/archive/refs/tags/frame-beta-4.tar.gz \
     | tar -xz --strip-components=1 -C release-new
 rsync -rcE release-new/ Wiicompiled_VR_Frame/
 rm -rf release-new

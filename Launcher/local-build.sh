@@ -244,6 +244,10 @@ else
     translator() { "$dotnet_bin" "$translator_dll" "$@"; }
 fi
 
+if (( builds_retro && !skip_retro_wfc_payload )); then
+    translator validate-retro-wfc-payload --directory "$retro_wfc_offline_dir"
+fi
+
 # ---------------------------------------------------------------------------
 # Parallelism: three independent knobs, same reasoning as LocalBuild.ps1 -
 # translator_threads (translation's own worker threads), translated_jobs (the real RAM guard,

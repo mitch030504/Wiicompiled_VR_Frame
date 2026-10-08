@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, openxr-work]
   pull_request:
   workflow_dispatch:
 
@@ -46,3 +46,20 @@ jobs:
 
       - name: Test
         run: dotnet test translator/Translator.sln -c Release --no-build --verbosity normal
+
+  linux-setup:
+    name: Linux setup and Frame installer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+      - name: Test disc staging, validation and cancellation
+        run: dotnet test translator/Translator.sln -c Release --filter FullyQualifiedName~LinuxDiscExtractionTests
+      - name: Test Frame installation and update file operations
+        run: python3 -m unittest discover -s Launcher/tests -v
+      - name: Check installer shell syntax
+        run: bash -n Launcher/steam-frame-install.sh Launcher/local-build.sh
